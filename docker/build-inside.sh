@@ -70,9 +70,9 @@ OS
 echo "windows12" > "$R/etc/hostname"
 # lines of code per component, embedded for proof mode
 sh /src/scripts/loc.sh /src > "$R/share/proof/loc.txt"
-date '+%Y-%m-%d %H:%M' > "$R/share/proof/build.txt"
+echo "${W12_BUILD_TIME:-$(date '+%Y-%m-%d %H:%M')}" > "$R/share/proof/build.txt"
 # toolkit scan: fails the build if any third-party UI stack is present
-sh /src/scripts/verify_no_toolkits.sh "$R" > "$R/share/proof/scan.txt" || { cat "$R/share/proof/scan.txt"; echo "[build] TOOLKIT SCAN FAILED"; exit 1; }
+W12_BUILD_TIME="${W12_BUILD_TIME:-}" sh /src/scripts/verify_no_toolkits.sh "$R" > "$R/share/proof/scan.txt" || { cat "$R/share/proof/scan.txt"; echo "[build] TOOLKIT SCAN FAILED"; exit 1; }
 cat "$R/share/proof/scan.txt" | head -3
 
 # ---- initramfs ----------------------------------------------------------

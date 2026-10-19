@@ -14,7 +14,7 @@ for f in $(cd "$R" && find . -type f | grep -v '^\./share/proof'); do
   if [ -n "$s" ]; then echo "FAIL $f: $s"; FAIL=1; fi
 done
 if [ $FAIL = 0 ]; then
-  echo "PASS $(date '+%Y-%m-%d %H:%M') scanned $N files (names + strings)"
+  echo "PASS ${W12_BUILD_TIME:-$(date '+%Y-%m-%d %H:%M')} scanned $N files (names + strings)"
   echo "checked: X11, Wayland, Qt, GTK, SDL, Cairo, Skia, FreeType, LVGL, ImGui, WebKit/Blink, Chromium, Gecko, Electron, busybox, systemd"
 fi
 exit $FAIL

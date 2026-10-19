@@ -124,9 +124,11 @@ void shell_tick(void) {
     float dt = (float)fmin(t - last, 0.05); last = t;
     float k = dt / 0.2f;
 #define STEP(p, tgt) do { float T_ = (tgt); if (p < T_) p = fminf(T_, p + k); else p = fmaxf(T_, p - k); } while (0)
+    float before = start_p + widgets_p + copilot_p;
     STEP(start_p, start_open);
     STEP(widgets_p, widgets_open);
     STEP(copilot_p, copilot_open);
+    if (start_p + widgets_p + copilot_p != before) dirty = 1;
     if (phase == PH_BOOT && t - boot_t0 > 3.0) { phase = PH_LOCK; lock_shown_t = t; MARK("READY lock"); dirty = 1; }
     if (phase == PH_LOCK && unlock_t >= 0 && t - unlock_t > 0.42) { phase = PH_DESK; unlock_t = -1; lock_drag = 0; MARK("READY desktop"); dirty = 1; }
     if (wall_loaded != TH.wall) { load_wallpaper(); dirty = 1; }
@@ -230,8 +232,10 @@ static void draw_topbar(Canvas *c) {
     icon_glyph(c, G_WIDGETS, 26, 18, 18, TH.accent);
     if (weather.ok) {
         icon_glyph(c, weather_glyph(weather.code), 54, 18, 18, fg);
-        labelf(c, F_SEMI, 14, 70, 3, 30, fg, "%.0f°C", weather.temp);
-        label(c, F_REG, 13, 112, 3, 30, TH.sub, weather.cond);
+        char tb[16];
+        snprintf(tb, sizeof tb, "%.0f°C", weather.temp);
+        float tx = label(c, F_SEMI, 14, 70, 3, 30, fg, tb);
+        label(c, F_REG, 13, tx + 8, 3, 30, TH.sub, weather.cond);
     } else label(c, F_REG, 13, 46, 3, 30, TH.sub, "Widgets");
     // centre: search
     float sw = 420, sx = (SCR_W - sw) / 2;
@@ -248,11 +252,11 @@ static void draw_topbar(Canvas *c) {
     icon_copilot(c, rx + 17, 18, 20);
     char hm[16], ds[32];
     clock_strings(hm, sizeof hm, 0, 0, ds, sizeof ds);
-    float tw = fmaxf(text_w(F_SEMI, 13, 0, hm), text_w(F_REG, 13, 0, ds)) + 20;
+    float wt = text_w(F_SEMI, 13, 0, hm), wd = text_w(F_REG, 13, 0, ds), tw = wt + wd + 32;
     rx -= tw + 6; hit_add(H_CLOCK, rx, 3, tw, 30);
     if (hover_id == H_CLOCK) g_rrect(c, rx, 3, tw, 30, 6, 6, TH.hover);
-    text_r(c, F_SEMI, 13, 0, rx + tw - 10, 22, fg, hm);
-    text_r(c, F_REG, 13, 0, rx + tw - 10 - text_w(F_SEMI, 13, 0, hm) - 10, 22, TH.sub, ds);
+    text(c, F_REG, 13, 0, rx + 12, 22, TH.sub, ds);
+    text(c, F_SEMI, 13, 0, rx + 20 + wd, 22, fg, hm);
     rx -= 4;
     rx -= 110; hit_add(H_NET, rx, 3, 110, 30);
     if (hover_id == H_NET) g_rrect(c, rx, 3, 110, 30, 6, 6, TH.hover);
@@ -387,14 +391,14 @@ static void draw_start(Canvas *c) {
             float cx = x + 28 + (i % 6) * cw, cy = y + 126 + (i / 6) * 96;
             int id = H_START_APP + i;
             hit_add(id, cx + 4, cy, cw - 8, 90);
-            if (!start_marked) MARK("START_ITEM %s %d %d", APPS[i].exe, (int)(cx + cw / 2), (int)(cy + 45));
+            if (!start_marked && start_p >= 1) MARK("START_ITEM %s %d %d", APPS[i].exe, (int)(cx + cw / 2), (int)(cy + 45));
             if (hover_id == id) g_rrect(c, cx + 4, cy, cw - 8, 90, 8, 8, TH.hover);
             icon_app(c, i, cx + cw / 2 - 20, cy + 12, 40);
             char *t = text_ellipsize(F_REG, 13, APPS[i].title, cw - 12);
             text_c(c, F_REG, 13, 0, cx + cw / 2, cy + 76, fg, t);
             free(t);
         }
-        if (a >= 1) start_marked = 1;
+        if (start_p >= 1) start_marked = 1;
         float ry0 = y + 340;
         text(c, F_SEMI, 15, 0, x + 40, ry0, fg, "Recommended");
         if (!nrecent) text(c, F_REG, 13, 0, x + 40, ry0 + 36, sub, "Files you open in Notepad and File Explorer show up here.");

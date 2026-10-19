@@ -11,3 +11,8 @@
 20:31 Compositor: wm.c (protocol server, Mica titlebars, shadows, drag/resize/snap/animations), shell.c (boot, lock, taskbar, top bar, Start, Alt+Tab), panels.c (Widgets, Copilot)
 20:33 First full build: toolkit scan PASS, initramfs 25 MB
 20:34 FIRST BOOT: init -> compositor in 38 ms, DHCP 36 ms, live weather over our own HTTPS (open-meteo) at 1.2 s, lock screen at 3 s. 3.2 ms avg frame work
+20:37 libw12ui client runtime + widgets; Notepad and Calculator are the first separate-process apps: protocol works first try (memfd double buffers, release messages)
+20:40 Terminal (own emulator on a pty: CSI/SGR parser, scrollback) + w12sh (built-in ls/cd/cat/ps/kill/free/df/ifconfig/ping/curl/proof...)
+20:43 File Explorer (nav pane, breadcrumb, list/grid, rename/delete/new folder, context menu) and Settings (System, Personalization, Network, Apps, About)
+20:46 Tested via QMP: Start -> apps, curl https://example.com through our TLS in Terminal, proof output; fixed Start markers firing mid-animation
+20:48 Fixed a light band under windows (shadow skipped the dy offset area); build timestamp now host local time

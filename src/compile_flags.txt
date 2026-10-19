@@ -1,0 +1,6 @@
+-std=gnu11
+-Ilib
+-Inet
+-I../third_party
+-I../third_party/bearssl/inc
+-D_GNU_SOURCE

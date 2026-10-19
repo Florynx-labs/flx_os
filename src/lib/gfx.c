@@ -251,9 +251,9 @@ void g_poly(Canvas *c, const float *xy, int n, uint32_t col0, uint32_t col1, flo
 
 // Soft drop shadow around a rounded rect; the interior is skipped (a window covers it).
 void g_shadow(Canvas *c, float x, float y, float w, float h, float r, float blur, int alpha, float dy) {
-    y += dy;
-    RR g = rr_make(x, y, w, h, r, r);
-    int ya = maxi(c->cy0, (int)floorf(y - blur)), yb = mini(c->cy1, (int)ceilf(y + h + blur));
+    // shadow shape = the window rect shifted down by dy; pixels under the window itself are skipped
+    RR g = rr_make(x, y + dy, w, h, r, r), win = rr_make(x, y, w, h, r, r);
+    int ya = maxi(c->cy0, (int)floorf(y - blur + dy)), yb = mini(c->cy1, (int)ceilf(y + h + blur + dy));
     int xa = maxi(c->cx0, (int)floorf(x - blur)), xb = mini(c->cx1, (int)ceilf(x + w + blur));
     int ix0 = (int)ceilf(x + r), ix1 = (int)floorf(x + w - r);
     float inv = 1.0f / blur;
@@ -263,9 +263,10 @@ void g_shadow(Canvas *c, float x, float y, float w, float h, float r, float blur
         uint32_t *row = ROW(c, py);
         for (int px = xa; px < xb; px++) {
             if (mid && px >= ix0 && px < ix1) { px = ix1 - 1; continue; }
+            if (rr_sdf(&win, px + 0.5f, fy) < -0.5f) continue;
             float d = rr_sdf(&g, px + 0.5f, fy);
-            if (d < 0 || d >= blur) continue;
-            float t = 1 - d * inv;
+            if (d >= blur) continue;
+            float t = d < 0 ? 1 : 1 - d * inv;
             unsigned a = (unsigned)(alpha * t * t);
             if (a) row[px] = blend(row[px], 0, a256(a));
         }

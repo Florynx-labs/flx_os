@@ -1,0 +1,13 @@
+Welcome to Windows 12!
+
+This is an unofficial fan project, not affiliated with Microsoft.
+
+Everything you see above the Linux kernel was written from scratch:
+the compositor, the window manager, the toolkit, the shell and every app.
+
+Try:
+  - Start (Win key) and search for an app
+  - Hover the maximize button for snap layouts
+  - Alt+Tab, Win+Arrow keys
+  - The Copilot button in the top-right corner
+  - Terminal: type "proof"

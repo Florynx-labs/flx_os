@@ -13,6 +13,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <ctype.h>
+#include <unistd.h>
 
 #define SCR_W 1920
 #define SCR_H 1080
