@@ -23,6 +23,21 @@ static void draw_cursor(Canvas *c, float x, float y) {
     g_poly(c, f2, 4, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0, 1, 1);
 }
 
+static void draw_resize_cursor(Canvas *c, float x, float y, int kind) {
+    float dx = kind == 1 ? 1 : kind == 2 ? 0 : 0.7071f, dy = kind == 1 ? 0 : kind == 2 ? 1 : (kind == 3 ? 0.7071f : -0.7071f);
+    float L = 11, hx = -dy, hy = dx;
+    for (int pass = 0; pass < 2; pass++) {
+        uint32_t col = pass ? 0xFFFFFFFF : 0xFF000000;
+        float w = pass ? 1.6f : 4.2f, a = pass ? 0 : 1.4f;
+        g_line(c, x - dx * L, y - dy * L, x + dx * L, y + dy * L, w, col);
+        for (int s = -1; s <= 1; s += 2) {
+            float tx = x + s * dx * (L + a), ty = y + s * dy * (L + a), bx = x + s * dx * (L - 6), by = y + s * dy * (L - 6);
+            float tri[6] = { tx, ty, bx + hx * (5 + a), by + hy * (5 + a), bx - hx * (5 + a), by - hy * (5 + a) };
+            g_poly(c, tri, 3, col, col, 0, 0, 1, 1);
+        }
+    }
+}
+
 static int listen_sock(void) {
     int s = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
     struct sockaddr_un a = { .sun_family = AF_UNIX };
@@ -91,7 +106,10 @@ int main(void) {
             composes++;
         }
         memcpy(scr->px, scene->px, (size_t)SCR_W * SCR_H * 4);
-        if (phase != PH_BOOT) draw_cursor(scr, mouse_x, mouse_y);
+        if (phase != PH_BOOT) {
+            int ck = phase == PH_DESK ? wm_cursor(mouse_x, mouse_y) : 0;
+            if (ck) draw_resize_cursor(scr, mouse_x, mouse_y, ck); else draw_cursor(scr, mouse_x, mouse_y);
+        }
         cx = mouse_x; cy = mouse_y;
         double work = now() - t0;
         work_sum += work;

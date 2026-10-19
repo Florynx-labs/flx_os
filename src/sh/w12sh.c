@@ -17,6 +17,7 @@
 #include <sys/un.h>
 #include <sys/utsname.h>
 #include <net/if.h>
+#include <termios.h>
 
 #define C_RESET "\x1b[0m"
 #define C_BLUE "\x1b[94m"
@@ -406,6 +407,44 @@ static void run(char *line) {
 
 static void on_int(int s) { (void)s; interrupted = 1; }
 
+// ---- line editor: raw tty, our own echo, history on Up/Down, Ctrl+C / Ctrl+L / Ctrl+U ------------
+static char *hist[200]; static int nhist;
+static int read_line(char *out, int cap, const char *prompt) {
+    int n = 0, h = nhist;
+    out[0] = 0;
+    for (;;) {
+        unsigned char c;
+        int r = read(0, &c, 1);
+        if (r <= 0) {
+            if (r < 0 && errno == EINTR) { if (interrupted) { interrupted = 0; p("^C\r\n"); out[0] = 0; return 0; } continue; }
+            return -1;
+        }
+        if (c == '\r' || c == '\n') { p("\r\n"); out[n] = 0; return n; }
+        if (c == 3) { p("^C\r\n"); out[0] = 0; return 0; }
+        if (c == 4 && !n) return -1;
+        if (c == 12) { p("\x1b[2J\x1b[H%s%s", prompt, out); fflush(stdout); continue; }
+        if (c == 21) { while (n) { p("\b \b"); n--; } out[0] = 0; fflush(stdout); continue; }
+        if (c == 127 || c == 8) {
+            if (n) { do n--; while (n && ((unsigned char)out[n] & 0xc0) == 0x80); out[n] = 0; p("\b \b"); fflush(stdout); }
+            continue;
+        }
+        if (c == 27) {   // ESC [ A/B (history), others ignored
+            unsigned char a, b;
+            if (read(0, &a, 1) != 1 || a != '[' || read(0, &b, 1) != 1) continue;
+            if ((b == 'A' && h > 0) || (b == 'B' && h < nhist)) {
+                h += b == 'A' ? -1 : 1;
+                while (n) { p("\b \b"); n--; }
+                snprintf(out, cap, "%s", h < nhist ? hist[h] : "");
+                n = strlen(out);
+                p("%s", out); fflush(stdout);
+            }
+            continue;
+        }
+        if (c == '\t') continue;
+        if (c >= 32 && n < cap - 1) { out[n++] = c; out[n] = 0; write(1, &c, 1); }
+    }
+}
+
 int main(void) {
     // our network library logs go to the serial console, not into the terminal
     int con = open("/dev/console", O_WRONLY | O_CLOEXEC);
@@ -414,15 +453,28 @@ int main(void) {
     sigaction(SIGINT, &sa, 0);
     setvbuf(stdout, 0, _IOLBF, 0);
     chdir(home());
+    struct termios cooked, raw;
+    int tty = tcgetattr(0, &cooked) == 0;
+    raw = cooked;
+    raw.c_lflag &= ~(ICANON | ECHO);
+    raw.c_cc[VMIN] = 1; raw.c_cc[VTIME] = 0;
     p(C_CYAN C_BOLD "Windows 12" C_RESET " Terminal · w12sh " W12_VERSION "\n");
-    p(C_DIM "Type 'help' for commands, 'proof' to see what this OS is made of." C_RESET "\n\n");
+    p(C_DIM "Type 'help' for commands, 'proof' to see what this OS is made of. Up/Down recall history." C_RESET "\n\n");
     char line[2048];
     for (;;) {
-        char cwd[512]; pretty_cwd(cwd, sizeof cwd);
-        p(C_GREEN "user@windows12" C_RESET " " C_BLUE "%s" C_RESET " > ", cwd);
+        char cwd[512], prompt[700]; pretty_cwd(cwd, sizeof cwd);
+        snprintf(prompt, sizeof prompt, C_GREEN "user@windows12" C_RESET " " C_BLUE "%s" C_RESET " > ", cwd);
+        p("%s", prompt);
         fflush(stdout);
-        if (!fgets(line, sizeof line, stdin)) { if (interrupted || ferror(stdin)) { interrupted = 0; clearerr(stdin); p("\n"); continue; } break; }
+        if (tty) tcsetattr(0, TCSANOW, &raw);
+        int r = tty ? read_line(line, sizeof line, prompt) : (fgets(line, sizeof line, stdin) ? (int)strlen(line) : -1);
+        if (tty) tcsetattr(0, TCSANOW, &cooked);   // commands run with a normal tty (Ctrl+C -> SIGINT)
+        if (r < 0) break;
         line[strcspn(line, "\r\n")] = 0;
+        if (line[0] && (!nhist || strcmp(hist[nhist - 1], line))) {
+            if (nhist == 200) { free(hist[0]); memmove(hist, hist + 1, 199 * sizeof *hist); nhist--; }
+            hist[nhist++] = strdup(line);
+        }
         MARK("SHELL %s", line);
         run(line);
     }

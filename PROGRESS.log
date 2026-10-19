@@ -25,3 +25,7 @@
 20:56 FIRST e2e RUN: 49/49 PASS in 98 s, 35 screenshots. Looked at all of them as contact sheets (ffmpeg tile)
 20:57 Visual bug from the screenshots: lock screen sometimes without the clock (fade-in was not flagged as animating, so it never recomposed). Fixed
 20:58 Desktop Wikipedia renders its nav first; browser now sends a mobile-class UA (Lumen's engine was tuned for those layouts) -> m.wikipedia renders cleanly with images
+21:00 README written (run, architecture, Copilot bridge details, proof mode, tests, third-party list, Lumen attribution, disclaimer)
+21:01 Polish: w12sh now has its own raw-mode line editor with Up/Down history; Start > All apps list; resize cursors on window edges; bigger boot dots
+21:02 Tested drag-to-edge snap with preview + corner resize via QMP drags. Found a ghost Mica strip when a window is partly off-screen (titlebar blur not clipped); fixed with a clipped helper
+21:04 e2e 49/49 again (104 s). Frame work 6-9 ms avg, worst ~18 ms with several windows + glass

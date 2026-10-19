@@ -11,7 +11,7 @@ int hover_id = -1;
 static double boot_t0, unlock_t = -1, lock_shown_t;
 static float lock_drag; static float lock_y0; static int lock_down;
 static char query[128];
-static int power_menu;
+static int power_menu, all_apps;
 static int super_alone;
 static int alt_sel; static int alt_list[MAXWIN], alt_n;
 static char recent[8][256]; static int nrecent;
@@ -108,7 +108,7 @@ void close_panels(void) {
 static void toggle_start(void) {
     int o = !start_open;
     close_panels();
-    start_open = o; query[0] = 0; start_marked = 0;
+    start_open = o; query[0] = 0; start_marked = 0; all_apps = 0;
     MARK("START %s", o ? "open" : "close");
 }
 
@@ -177,14 +177,14 @@ static void draw_boot(Canvas *c, float alpha) {
     float la = clampf((float)t / 0.6f, 0, 1) * alpha;
     icon_logo(c, SCR_W / 2, SCR_H / 2 - 70, 150, (int)(255 * la));
     // Windows-style loading dots: five dots chasing around a circle, slow at the top
-    float cx = SCR_W / 2, cy = SCR_H / 2 + 150, R = 22;
+    float cx = SCR_W / 2, cy = SCR_H / 2 + 150, R = 26;
     for (int i = 0; i < 5; i++) {
-        double tt = t - 0.7 - i * 0.13;
+        double tt = t - 0.35 - i * 0.16;
         if (tt < 0) continue;
         float p = (float)fmod(tt, 2.2) / 2.2f;
         float ang = -(float)M_PI / 2 + 2 * (float)M_PI * (p - 0.12f * sinf(2 * (float)M_PI * p) * 1.6f) * 1.0f;
         float a = clampf(fminf(p, 1 - p) * 12, 0, 1) * alpha;
-        g_circle(c, cx + R * cosf(ang), cy + R * sinf(ang), 3.2f, c_alpha(0xFFFFFFFF, a));
+        g_circle(c, cx + R * cosf(ang), cy + R * sinf(ang), 4.2f, c_alpha(0xFFFFFFFF, a));
     }
     text_c(c, F_SEMILIGHT, 14, 0, SCR_W / 2, SCR_H - 48, c_alpha(0xFF8A8A8A, la), "Windows 12  ·  unofficial fan project, not affiliated with Microsoft");
 }
@@ -382,11 +382,30 @@ static void draw_start(Canvas *c) {
             }
         }
     } else {
-        text(c, F_SEMI, 15, 0, x + 40, y + 106, fg, "Pinned");
+        text(c, F_SEMI, 15, 0, x + 40, y + 106, fg, all_apps ? "All apps" : "Pinned");
         hit_add(H_ALLAPPS, x + SM_W - 130, y + 88, 96, 26);
         g_rrect(c, x + SM_W - 130, y + 88, 96, 26, 5, 5, hover_id == H_ALLAPPS ? TH.hover : (TH.dark ? 0x18FFFFFF : 0x70FFFFFF));
-        text(c, F_REG, 13, 0, x + SM_W - 118, y + 106, fg, "All apps");
-        icon_glyph(c, G_CHEV_R, x + SM_W - 48, y + 101, 12, fg);
+        if (all_apps) { icon_glyph(c, G_CHEV_L, x + SM_W - 116, y + 101, 12, fg); text(c, F_REG, 13, 0, x + SM_W - 100, y + 106, fg, "Back"); }
+        else { text(c, F_REG, 13, 0, x + SM_W - 118, y + 106, fg, "All apps"); icon_glyph(c, G_CHEV_R, x + SM_W - 48, y + 101, 12, fg); }
+      if (all_apps) {
+        int order[NAPPS];
+        for (int i = 0; i < NAPPS; i++) order[i] = i;
+        for (int i = 0; i < NAPPS; i++) for (int k = i + 1; k < NAPPS; k++) if (strcmp(APPS[order[k]].title, APPS[order[i]].title) < 0) { int t = order[i]; order[i] = order[k]; order[k] = t; }
+        char last = 0;
+        float ly = y + 124;
+        for (int i = 0; i < NAPPS; i++) {
+            int a = order[i];
+            if (APPS[a].title[0] != last) { last = APPS[a].title[0]; char L[2] = { last, 0 }; text(c, F_SEMI, 13, 0, x + 44, ly + 18, TH.accent, L); ly += 26; }
+            int id = H_START_APP + a;
+            hit_add(id, x + 28, ly, SM_W - 56, 44);
+            if (hover_id == id) g_rrect(c, x + 28, ly, SM_W - 56, 44, 6, 6, TH.hover);
+            icon_app(c, a, x + 40, ly + 8, 28);
+            text(c, F_REG, 14, 0, x + 82, ly + 27, fg, APPS[a].title);
+            text_r(c, F_REG, 12, 0, x + SM_W - 44, ly + 27, sub, APPS[a].desc);
+            ly += 44;
+            if (ly > y + SM_H - 120) break;
+        }
+      } else {
         float cw = (SM_W - 56) / 6.0f;
         for (int i = 0; i < NAPPS; i++) {
             float cx = x + 28 + (i % 6) * cw, cy = y + 126 + (i / 6) * 96;
@@ -400,6 +419,8 @@ static void draw_start(Canvas *c) {
             free(t);
         }
         if (start_p >= 1) start_marked = 1;
+      }
+      if (!all_apps) {
         float ry0 = y + 340;
         text(c, F_SEMI, 15, 0, x + 40, ry0, fg, "Recommended");
         if (!nrecent) text(c, F_REG, 13, 0, x + 40, ry0 + 36, sub, "Files you open in Notepad and File Explorer show up here.");
@@ -415,6 +436,7 @@ static void draw_start(Canvas *c) {
             free(t);
             text(c, F_REG, 12, 0, rx + 56, ry + 44, sub, i == 0 ? "Recently opened" : "Opened earlier");
         }
+      }
     }
     // user + power strip
     float by = y + SM_H - 68;
@@ -557,7 +579,7 @@ int shell_mouse(IEv *e) {
             settings_save(); sync();
             exit(h == H_PWR_RESTART ? 42 : 43);
         case H_USER: launch("settings", "accounts"); close_panels(); return 1;
-        case H_ALLAPPS: return 1;
+        case H_ALLAPPS: all_apps = !all_apps; return 1;
         case H_START_PANEL: case H_START_SEARCH: return 1;
         }
         if (h >= H_TB_APP && h < H_TB_APP + 16) { tb_click(h - H_TB_APP); return 1; }

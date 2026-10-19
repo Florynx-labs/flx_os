@@ -302,6 +302,17 @@ static void zone_rect(int l, int z, float *x, float *y, float *w, float *h) {   
 
 int wm_grabbing(void) { return drag != DR_NONE; }
 
+// cursor shape: 0 arrow, 1 left-right, 2 up-down, 3 NW-SE, 4 NE-SW
+int wm_cursor(float x, float y) {
+    int e = 0;
+    if (drag == DR_RESIZE) e = rz_edges;
+    else if (drag == DR_NONE) { Win *w = win_at(x, y); int h = w ? frame_hit(w, x, y) : 0; if (h > 1) e = h >> 1; }
+    if (!e) return 0;
+    bool hz = e & 3, vt = e & 12;
+    if (hz && vt) return ((e & 1) && (e & 4)) || ((e & 2) && (e & 8)) ? 3 : 4;
+    return hz ? 1 : 2;
+}
+
 int wm_mouse(IEv *e) {
     float x = e->x, y = e->y;
     // snap flyout (drawn above windows)
@@ -465,6 +476,15 @@ static void anim_rect(Win *w, float *x, float *y, float *ww, float *hh, int *alp
     }
 }
 
+// pre-blurred wallpaper under a screen rect (Mica), clipped to the screen
+static void mica_under(Canvas *c, float x, float y, float w, float h, float rt, float rb, int al) {
+    int x0 = maxi(0, (int)floorf(x)), y0 = maxi(0, (int)floorf(y));
+    int x1 = mini(SCR_W, (int)ceilf(x + w)), y1 = mini(SCR_H, (int)ceilf(y + h));
+    if (x1 <= x0 || y1 <= y0) return;
+    bool clipped = x0 > x || y0 > y || x1 < x + w || y1 < y + h;
+    g_buf(c, wall_blur->px + (size_t)y0 * SCR_W + x0, SCR_W, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0, clipped ? 0 : rt, clipped ? 0 : rb, al, 1);
+}
+
 static void draw_window(Canvas *c, Win *w) {
     float fx, fy, fw, fh;
     int al;
@@ -475,8 +495,7 @@ static void draw_window(Canvas *c, Win *w) {
     float r = rad(w), sc = fw / w->w, tb = TB * sc;
     if (w->state != 1) g_shadow(c, fx, fy, fw, fh, r, foc ? 34 : 20, (int)((foc ? 95 : 55) * al / 255), foc ? 8 : 4);
     // Mica titlebar: the pre-blurred wallpaper under it, tinted with the theme
-    g_buf(c, wall_blur->px + (size_t)maxi(0, (int)fy) * SCR_W + maxi(0, (int)fx), SCR_W, mini((int)fw, SCR_W - maxi(0, (int)fx)), mini((int)tb, SCR_H - maxi(0, (int)fy)),
-          maxi(0, (int)fx), maxi(0, (int)fy), mini((int)fw, SCR_W - maxi(0, (int)fx)), mini((int)tb, SCR_H - maxi(0, (int)fy)), r, 0, al, 1);
+    mica_under(c, fx, fy, fw, tb, r, 0, al);
     uint32_t tint = TH.dark ? (foc ? 0xD8202024 : 0xEC2A2A2C) : (foc ? 0xD4EEF0F4 : 0xEAF6F6F6);
     g_rrect(c, fx, fy, fw, tb, r, 0, c_alpha(tint, (tint >> 24) / 255.0f * al / 255.0f));
     // content
@@ -484,8 +503,7 @@ static void draw_window(Canvas *c, Win *w) {
     if (w->front >= 0 && w->shm) {
         const uint32_t *buf = w->shm + (size_t)w->front * BUF_W * BUF_H;
         if (w->mica)
-            g_buf(c, wall_blur->px + (size_t)maxi(0, (int)cy) * SCR_W + maxi(0, (int)cx), SCR_W, mini((int)cw, SCR_W - maxi(0, (int)cx)), mini((int)ch, SCR_H - maxi(0, (int)cy)),
-                  maxi(0, (int)cx), maxi(0, (int)cy), mini((int)cw, SCR_W - maxi(0, (int)cx)), mini((int)ch, SCR_H - maxi(0, (int)cy)), 0, r, al, 1);
+            mica_under(c, cx, cy, cw, ch, 0, r, al);
         if (w->anim == AN_NONE || w->anim == AN_MOVE) {
             if (w->anim == AN_MOVE) g_buf(c, buf, BUF_W, w->bw, w->bh, cx, cy, cw, ch, 0, r, al, !w->mica);
             else {

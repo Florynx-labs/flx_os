@@ -100,6 +100,7 @@ void hit_add(int id, float x, float y, float w, float h);
 int hit_at(float x, float y);
 extern int hover_id;
 int wm_grabbing(void);
+int wm_cursor(float x, float y);
 void lock_now(void);
 // panel slide state 0..1
 extern float start_p, widgets_p, copilot_p;
