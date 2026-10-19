@@ -25,6 +25,7 @@ static float gx, gy, ox, oy, ow, oh;
 static Win *hover_win;
 static int snap_prev; static float spx, spy, spw, sph;   // drag-to-edge preview
 static int flyout_open; static Win *flyout_win; static double flyout_t;
+static Win *hover_max_win;   // mouse resting on a maximize button (opens the snap flyout)
 
 static float rad(Win *w) { return w->state == 1 ? 0 : 8; }
 static int idx(Win *w) { return (int)(w - wins); }
@@ -84,7 +85,7 @@ void wm_maximize(Win *w) {
 void wm_snap(Win *w, float x, float y, float ww, float hh, const char *name) {
     if (w->state == 0) { w->rx = w->x; w->ry = w->y; w->rw = w->w; w->rh = w->h; }
     set_rect(w, x, y + TB, ww, hh - TB, 2);
-    MARK("SNAP %s %s", w->exe, name);
+    MARK("SNAP %s %s %d %d %d %d", w->exe, name, (int)w->x, (int)w->y, (int)w->w, (int)w->h);
 }
 static void snap_frac(Win *w, float fx, float fy, float fw, float fh, const char *name) {
     float W = SCR_W - 2 * GAP, H = WORK_Y1 - WORK_Y0 - 2 * GAP;
@@ -151,6 +152,7 @@ static void destroy(Win *w) {
     if (hover_win == w) hover_win = 0;
     if (dw == w) { dw = 0; drag = DR_NONE; }
     if (flyout_win == w) { flyout_open = 0; flyout_win = 0; }
+    if (hover_max_win == w) hover_max_win = 0;
     memset(w, 0, sizeof *w);
     dirty = 1;
 }
@@ -197,7 +199,7 @@ void wm_client(Win *w) {
             int old = w->front;
             w->front = m.a; w->bw = mini(m.b, BUF_W); w->bh = mini(m.c, BUF_H);
             if (old >= 0 && old != m.a) msg_send(w->fd, M_RELEASE, old, 0, 0, 0, 0, 0, -1);
-            if (!w->mapped) { w->mapped = 1; start_anim(w, AN_OPEN); wm_focus(w); MARK("WINDOW_MAPPED %s %d", w->exe, w->id); }
+            if (!w->mapped) { w->mapped = 1; start_anim(w, AN_OPEN); wm_focus(w); MARK("WINDOW_MAPPED %s %d %d %d %d %d", w->exe, w->id, (int)w->x, (int)w->y, (int)w->w, (int)w->h); }
             dirty = 1;
             break;
         }
@@ -241,6 +243,10 @@ void wm_tick(void) {
             w->anim = AN_NONE;
             dirty = 1;
         }
+    }
+    if (hover_max_win && !flyout_open && hover_max_win->used && hover_max_win->hover_max_t && t - hover_max_win->hover_max_t > 0.45) {
+        flyout_open = 1; flyout_win = hover_max_win; flyout_t = t; dirty = 1;
+        MARK("SNAP_FLYOUT %s", flyout_win->exe);
     }
     if (flyout_open && flyout_win) {
         Win *w = flyout_win;
@@ -386,10 +392,8 @@ int wm_mouse(IEv *e) {
         int bh = 0;
         if (w && y >= w->y - TB && y < w->y && x >= w->x + w->w - 138) bh = 1 + (int)((w->x + w->w - x) / 46);
         if (bh != last_btn_hover) { last_btn_hover = bh; dirty = 1; }
-        if (w && bh == 2) {
-            if (!w->hover_max_t) w->hover_max_t = now();
-            if (now() - w->hover_max_t > 0.45 && !flyout_open) { flyout_open = 1; flyout_win = w; flyout_t = now(); MARK("SNAP_FLYOUT %s", w->exe); dirty = 1; }
-        } else if (w) w->hover_max_t = 0;
+        if (w && bh == 2) { if (!w->hover_max_t) w->hover_max_t = now(); hover_max_win = w; }
+        else { if (w) w->hover_max_t = 0; hover_max_win = 0; }
         if (w && y >= w->y && frame_hit(w, x, y) == 1) send_mouse(w, e, EV_MOVE);
         return w != 0;
     }

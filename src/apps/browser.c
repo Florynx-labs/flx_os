@@ -19,6 +19,8 @@ typedef struct Tab {
     float restore_scroll;
 } Tab;
 #define MAXTAB 1
+// mobile-class UA: sites then send their simple layouts, which suit this engine best (Lumen OS 2 was a phone)
+#define BROWSER_UA "Mozilla/5.0 (Linux; Windows 12; Mobile) W12Browser/1.0"
 static Tab *tabs[1];
 static int ntab, cur;
 static volatile int page_w = 1100;
@@ -32,6 +34,7 @@ static float maxf_(float a, float b) { return a > b ? a : b; }
 typedef struct { Tab *t; Node *n; char *url; int gen; } ImgJob;
 static void *img_thread(void *a) {
     ImgJob *j = a;
+    http_set_ua(BROWSER_UA);
     HttpResp *r = http_request("GET", j->url, 0, 0, 6 << 20);
     Image *im = r->status == 200 && r->body ? image_decode(r->body, r->len) : 0;
     http_free(r);
@@ -221,6 +224,7 @@ static void do_load(Tab *t, char *url, char *body, int hist_mode) {
 
 static void *tab_thread(void *a) {
     Tab *t = a;
+    http_set_ua(BROWSER_UA);
     for (;;) {
         pthread_mutex_lock(&t->jmu);
         while (!t->job) {
@@ -355,7 +359,7 @@ static int editing, addr_sel, last_ver = -1;
 static char addr[2048];
 static char hover_url[512];
 static const char *QUICK[][2] = {
-    { "Wikipedia", "https://en.wikipedia.org/wiki/Microsoft_Windows" }, { "Hacker News", "https://news.ycombinator.com/" },
+    { "Wikipedia", "https://en.m.wikipedia.org/wiki/Microsoft_Windows" }, { "Hacker News", "https://news.ycombinator.com/" },
     { "example.com", "https://example.com/" }, { "CNN Lite", "https://lite.cnn.com/" },
     { "NPR Text", "https://text.npr.org/" }, { "Lumen OS 2 (GitHub)", "https://github.com/dosty340-max" } };
 

@@ -21,3 +21,7 @@
 20:50 Copilot bridge: claude -p with --tools "" --setting-sources "" --strict-mcp-config --disable-slash-commands in an empty temp dir, clean env, prompt via stdin; streamed as chunked NDJSON. Found that without --setting-sources "" the user's own hooks leaked into answers
 20:51 Minesweeper (3 levels, safe first click, chording, flags, timer) and the Proof window (live /proc, LOC bars, scan PASS badge, rootfs listing)
 20:53 Full manual pass via QMP: Wikipedia loaded, Task Manager, Copilot real answer in 3.4 s through the bridge, Widgets board, Minesweeper, Proof all OK
+20:55 tests/e2e.sh written: fresh disk copy, every app via Start clicks, notepad save + unsaved prompt, calc, mines, terminal proof+ping, browser example.com + Wikipedia, Task Manager kills calc, Explorer mkdir/rename/delete, Settings dark theme, About>Proof, widgets, Win+arrows snap, flyout quarter snap, Alt+Tab, Copilot up AND down, Win+L, shutdown from Start
+20:56 FIRST e2e RUN: 49/49 PASS in 98 s, 35 screenshots. Looked at all of them as contact sheets (ffmpeg tile)
+20:57 Visual bug from the screenshots: lock screen sometimes without the clock (fade-in was not flagged as animating, so it never recomposed). Fixed
+20:58 Desktop Wikipedia renders its nav first; browser now sends a mobile-class UA (Lumen's engine was tuned for those layouts) -> m.wikipedia renders cleanly with images

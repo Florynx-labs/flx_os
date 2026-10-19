@@ -169,7 +169,7 @@ static void draw_modal(Canvas *c) {
         text(c, F_REG, 15, 0, x + 24, y + 86, TH.text, q);
         g_rrect(c, x, y + h - 70, w, 70, 0, 10, TH.bg);
         if (ui_button(x + w - 372, y + h - 52, 110, 34, "Save", B_ACCENT) || ui_key(K_ENTER, 0)) { quit_after_save = 1; modal = 0; if (save() == 0) app_quit(); }
-        if (ui_button(x + w - 252, y + h - 52, 110, 34, "Don't save", B_STD)) { MARK("NOTEPAD_DISCARD"); app_quit(); }
+        if (ui_button(x + w - 252, y + h - 52, 110, 34, "Don't save", B_STD) || ui_key('n', 0)) { MARK("NOTEPAD_DISCARD"); app_quit(); }
         if (ui_button(x + w - 132, y + h - 52, 110, 34, "Cancel", B_STD) || ui_key(K_ESC, 0)) modal = 0;
     } else if (modal == 2) {
         text(c, F_SEMI, 20, 0, x + 24, y + 44, TH.text, "Save as");

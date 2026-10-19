@@ -173,7 +173,7 @@ static void draw_processes(Canvas *c, float x, float y, float w, float h) {
             text(c, F_REG, 13, 0, cx[4], ry + 21, TH.text, b);
             char *ex = text_ellipsize(F_REG, 13, p->kthread ? "[kernel]" : p->exe, x + w - cx[5] - 16);
             text(c, F_REG, 13, 0, cx[5], ry + 21, p->kthread ? TH.dim : TH.text, ex); free(ex);
-            if (ui_downin(x, ry, w - 12, lh - 2) && ui_in(x, ly, w, vh)) sel_pid = p->pid;
+            if (ui_downin(x, ry, w - 12, lh - 2) && ui_in(x, ly, w, vh)) { sel_pid = p->pid; MARK("TASKMGR select %d %s", p->pid, p->name); }
         }
         ry += lh;
     }

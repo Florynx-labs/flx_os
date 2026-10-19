@@ -114,6 +114,7 @@ static void toggle_start(void) {
 
 int shell_animating(void) {
     if (phase == PH_BOOT || unlock_t >= 0) return 1;
+    if (phase == PH_LOCK) return 1;   // fade-in + the bobbing unlock hint
     float ts = start_open, tw = widgets_open, tc = copilot_open;
     return fabsf(start_p - ts) > 0.001f || fabsf(widgets_p - tw) > 0.001f || fabsf(copilot_p - tc) > 0.001f || copilot_busy;
 }
