@@ -34,3 +34,5 @@
 21:08 Snap assist: after a half snap, the other half offers the remaining windows as live thumbnails; click one to fill it. Bottom-right build watermark "unofficial fan build / Not affiliated with Microsoft"
 21:09 e2e 50/50 (added a snap-assist check)
 21:10 Quick Settings flyout (click network/volume/battery or Win+A): real network tile, dark mode / accent / wallpaper tiles that change the theme live, lock, sliders. Desktop right-click menu (Personalize, Display settings, Open in Terminal, Refresh)
+21:12 Perf stress (6 windows + continuous drag): 13.4 ms avg frame work, 56 fps. Windows are now composited in 4 horizontal bands on 4 threads (pure drawing, own clip each); glass overlays stay on the main thread, the drag-to-edge preview now uses the blur cache instead of reading live pixels
+21:13 Same stress: 5.4 ms avg, 7.2 ms worst. No seams visible. e2e 50/50

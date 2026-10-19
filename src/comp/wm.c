@@ -593,19 +593,38 @@ static void draw_flyout(Canvas *c) {
         }
 }
 
-void wm_compose(Canvas *c) {
+// Windows are composited in 4 horizontal bands on 4 threads (pure drawing, each band has its own
+// clip). Overlays that sample live pixels (glass) run afterwards on the main thread.
+typedef struct { Canvas c; } Band;
+static void compose_band(Canvas *c) {
     g_buf(c, wall->px, SCR_W, SCR_W, SCR_H, 0, 0, SCR_W, SCR_H, 0, 0, 255, 1);
     // build watermark, bottom right (like an Insider build), doubles as the disclaimer
     text_r(c, F_REG, 12, 0, SCR_W - 18, SCR_H - 34, 0x99FFFFFF, "Windows 12 · unofficial fan build " W12_VERSION);
     text_r(c, F_REG, 12, 0, SCR_W - 18, SCR_H - 16, 0x99FFFFFF, "Not affiliated with Microsoft");
-    if (snap_prev) {   // drag-to-edge preview, behind the window being dragged
-        g_glass(c, spx, spy, spw, sph, snap_prev == 3 ? 0 : 8, c_alpha(TH.accent, 0.25f));
-        g_rrect_line(c, spx, spy, spw, sph, snap_prev == 3 ? 0 : 8, 1.5f, c_alpha(TH.accent, 0.8f));
+    if (snap_prev) {   // drag-to-edge preview behind the dragged window: tinted blurred wallpaper (no live read)
+        float r = snap_prev == 3 ? 0 : 8;
+        mica_under(c, spx, spy, spw, sph, r, r, 255);
+        g_rrect(c, spx, spy, spw, sph, r, r, c_alpha(TH.accent, 0.22f));
+        g_rrect_line(c, spx, spy, spw, sph, r, 1.5f, c_alpha(TH.accent, 0.8f));
     }
     for (int i = 0; i < nz; i++) {
         Win *w = &wins[zord[i]];
         if (w->used && w->mapped) draw_window(c, w);
     }
+}
+static void *band_th(void *a) { compose_band(&((Band *)a)->c); return 0; }
+
+void wm_compose(Canvas *c) {
+    enum { NB = 4 };
+    Band b[NB];
+    pthread_t th[NB];
+    for (int i = 0; i < NB; i++) {
+        b[i].c = *c;
+        g_clip(&b[i].c, 0, SCR_H * i / NB, SCR_W, SCR_H * (i + 1) / NB);
+        if (i) pthread_create(&th[i], 0, band_th, &b[i]);
+    }
+    compose_band(&b[0].c);
+    for (int i = 1; i < NB; i++) pthread_join(th[i], 0);
     if (flyout_open && flyout_win && flyout_win->used && !flyout_win->closing) draw_flyout(c);
     if (assist_open) {
         g_glass(c, asx, asy, asw, ash, 10, TH.dark ? 0xC0202024 : 0xB8EEF0F4);
@@ -624,8 +643,8 @@ void wm_compose(Canvas *c) {
             char *t = text_ellipsize(F_REG, 13, o->title, cw - 44);
             text(c, F_REG, 13, 0, cx + 36, cy + 22, TH.text, t); free(t);
             if (o->front >= 0 && o->shm) {
-                float tw = cw - 16, th = ch - 42, sc = fminf(tw / o->bw, th / o->bh), pw = o->bw * sc, ph = o->bh * sc;
-                g_buf(c, o->shm + (size_t)o->front * BUF_W * BUF_H, BUF_W, o->bw, o->bh, cx + 8 + (tw - pw) / 2, cy + 34 + (th - ph) / 2, pw, ph, 4, 4, 255, 1);
+                float tw = cw - 16, th2 = ch - 42, sc = fminf(tw / o->bw, th2 / o->bh), pw = o->bw * sc, ph = o->bh * sc;
+                g_buf(c, o->shm + (size_t)o->front * BUF_W * BUF_H, BUF_W, o->bw, o->bh, cx + 8 + (tw - pw) / 2, cy + 34 + (th2 - ph) / 2, pw, ph, 4, 4, 255, 1);
             }
         }
     }
