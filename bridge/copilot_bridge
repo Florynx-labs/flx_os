@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Windows 12 Copilot bridge (runs on the Mac, not in the guest). Same pattern as the
+Lumen OS 2 YouTube bridge: a tiny stdlib HTTP server on 127.0.0.1 that the guest reaches
+through QEMU's user network as http://10.0.2.2:8766.
+
+POST /ask  {"prompt": "...", "history": [{"role": "user"|"assistant", "text": "..."}]}
+  -> pipes the conversation into `claude -p` (no tools, no MCP, no hooks, empty temp dir,
+     clean environment) and streams the answer back as chunked NDJSON lines:
+       {"t": "token text"}   ... (an empty {"t": ""} every few seconds as a heartbeat)
+       {"done": true}        or {"error": "..."} then {"done": true}
+"""
+import json, os, select, shutil, subprocess, sys, tempfile, threading, time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+PORT = int(os.environ.get("W12_BRIDGE_PORT", "8766"))
+SYSTEM = ("You are Copilot inside Windows 12, an unofficial fan OS. Answer briefly in plain text "
+          "(no markdown, no bullet symbols, no code fences). Keep answers under 120 words.")
+TIMEOUT = 90           # seconds for the whole answer
+MAX_PROMPT = 4000      # characters accepted from the guest
+MAX_ANSWER = 6000      # characters streamed back
+HOME = os.path.expanduser("~")
+PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + os.path.join(HOME, ".local/bin")
+CLAUDE = shutil.which("claude", path=PATH) or "claude"
+
+
+def log(*a):
+    print(time.strftime("%H:%M:%S"), *a, flush=True)
+
+
+def build_prompt(req):
+    hist = req.get("history") or []
+    parts = []
+    for h in hist[-12:]:
+        role = "User" if h.get("role") == "user" else "Copilot"
+        parts.append(f"{role}: {str(h.get('text', ''))[:1500]}")
+    prompt = str(req.get("prompt", ""))[:MAX_PROMPT]
+    if parts:
+        return "Conversation so far:\n" + "\n".join(parts) + f"\n\nUser: {prompt}\nCopilot:"
+    return prompt
+
+
+class H(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt, *a):
+        pass
+
+    def chunk(self, obj):
+        data = (json.dumps(obj) + "\n").encode()
+        self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data))
+        self.wfile.flush()
+
+    def do_GET(self):
+        body = b"Windows 12 Copilot bridge. POST /ask\n"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        if self.path != "/ask":
+            self.send_error(404); return
+        n = min(int(self.headers.get("Content-Length") or 0), 200000)
+        try:
+            req = json.loads(self.rfile.read(n) or b"{}")
+        except ValueError:
+            self.send_error(400); return
+        prompt = build_prompt(req)
+        log("ask:", repr(str(req.get("prompt", ""))[:80]), f"(history {len(req.get('history') or [])})")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        sent, t0 = 0, time.time()
+        with tempfile.TemporaryDirectory(prefix="w12-copilot-") as empty:
+            # argv list, no shell; the prompt goes in through stdin; all tools disabled
+            cmd = [CLAUDE, "-p", "--tools", "", "--setting-sources", "", "--strict-mcp-config",
+                   "--disable-slash-commands", "--no-session-persistence",
+                   "--output-format", "stream-json", "--include-partial-messages", "--verbose",
+                   "--system-prompt", SYSTEM]
+            env = {"HOME": HOME, "USER": os.environ.get("USER", ""), "PATH": PATH}
+            try:
+                p = subprocess.Popen(cmd, cwd=empty, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE)
+            except OSError as e:
+                self.chunk({"error": f"Can't start claude: {e}"}); self.chunk({"done": True}); self.end(); return
+            p.stdin.write(prompt.encode()); p.stdin.close()
+            buf, last_beat, final = b"", time.time(), None
+            try:
+                while True:
+                    if time.time() - t0 > TIMEOUT:
+                        self.chunk({"error": "\n(Copilot timed out)"}); break
+                    r, _, _ = select.select([p.stdout], [], [], 1.0)
+                    if not r:
+                        if p.poll() is not None: break
+                        if time.time() - last_beat > 4:
+                            self.chunk({"t": ""}); last_beat = time.time()
+                        continue
+                    data = os.read(p.stdout.fileno(), 65536)
+                    if not data: break
+                    buf += data
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        try:
+                            ev = json.loads(line)
+                        except ValueError:
+                            continue
+                        if ev.get("type") == "stream_event":
+                            e = ev.get("event", {})
+                            if e.get("type") == "content_block_delta" and e.get("delta", {}).get("type") == "text_delta":
+                                t = e["delta"].get("text", "")
+                                if sent + len(t) > MAX_ANSWER: t = t[:max(0, MAX_ANSWER - sent)]
+                                if t:
+                                    sent += len(t); self.chunk({"t": t}); last_beat = time.time()
+                        elif ev.get("type") == "result":
+                            final = ev
+                if final and not sent and final.get("result"):
+                    self.chunk({"t": str(final["result"])[:MAX_ANSWER]}); sent = len(final["result"])
+                if final and final.get("is_error"):
+                    self.chunk({"error": "\n(" + str(final.get("result") or "Copilot error") + ")"})
+                if not sent and not final:
+                    err = p.stderr.read().decode(errors="replace")[-300:] if p.poll() is not None else ""
+                    self.chunk({"error": "Copilot couldn't answer. " + err.strip()})
+                self.chunk({"done": True})
+            except (BrokenPipeError, ConnectionResetError):
+                log("guest went away")
+            finally:
+                if p.poll() is None: p.kill()
+        log(f"answered {sent} chars in {time.time() - t0:.1f}s")
+        self.end()
+
+    def end(self):
+        try:
+            self.wfile.write(b"0\r\n\r\n"); self.wfile.flush()
+        except OSError:
+            pass
+        self.close_connection = True
+
+
+if __name__ == "__main__":
+    srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
+    log(f"Copilot bridge on 127.0.0.1:{PORT} (guest: http://10.0.2.2:{PORT}), claude = {CLAUDE}")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass

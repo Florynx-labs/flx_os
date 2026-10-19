@@ -16,3 +16,8 @@
 20:43 File Explorer (nav pane, breadcrumb, list/grid, rename/delete/new folder, context menu) and Settings (System, Personalization, Network, Apps, About)
 20:46 Tested via QMP: Start -> apps, curl https://example.com through our TLS in Terminal, proof output; fixed Start markers firing mid-animation
 20:48 Fixed a light band under windows (shadow skipped the dy offset area); build timestamp now host local time
+20:49 Browser: Lumen's HTML/CSS engine + loader pipeline in a window (tab strip, toolbar, address bar, start page with quick links, hover URL, forms); Wikipedia renders over our HTTPS
+20:50 Task Manager: /proc processes grouped (Apps / Windows 12 processes / kernel threads), per-process CPU% + RSS, End task (SIGKILL), live CPU/memory graphs
+20:50 Copilot bridge: claude -p with --tools "" --setting-sources "" --strict-mcp-config --disable-slash-commands in an empty temp dir, clean env, prompt via stdin; streamed as chunked NDJSON. Found that without --setting-sources "" the user's own hooks leaked into answers
+20:51 Minesweeper (3 levels, safe first click, chording, flags, timer) and the Proof window (live /proc, LOC bars, scan PASS badge, rootfs listing)
+20:53 Full manual pass via QMP: Wikipedia loaded, Task Manager, Copilot real answer in 3.4 s through the bridge, Widgets board, Minesweeper, Proof all OK
