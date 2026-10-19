@@ -29,3 +29,7 @@
 21:01 Polish: w12sh now has its own raw-mode line editor with Up/Down history; Start > All apps list; resize cursors on window edges; bigger boot dots
 21:02 Tested drag-to-edge snap with preview + corner resize via QMP drags. Found a ghost Mica strip when a window is partly off-screen (titlebar blur not clipped); fixed with a clipped helper
 21:04 e2e 49/49 again (104 s). Frame work 6-9 ms avg, worst ~18 ms with several windows + glass
+21:06 Restart from Start verified: reboot() -> kernel -> lock again; a file written in Terminal survived the reboot on the ext2 disk
+21:07 Theme switches now crossfade (old frame snapshot faded out over 0.4 s, hides apps repainting one by one)
+21:08 Snap assist: after a half snap, the other half offers the remaining windows as live thumbnails; click one to fill it. Bottom-right build watermark "unofficial fan build / Not affiliated with Microsoft"
+21:09 e2e 50/50 (added a snap-assist check)

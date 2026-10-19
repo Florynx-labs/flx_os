@@ -25,7 +25,9 @@ static float gx, gy, ox, oy, ow, oh;
 static Win *hover_win;
 static int snap_prev; static float spx, spy, spw, sph;   // drag-to-edge preview
 static int flyout_open; static Win *flyout_win; static double flyout_t;
-static Win *hover_max_win;   // mouse resting on a maximize button (opens the snap flyout)
+static Win *hover_max_win;
+static int assist_open, assist_n, assist_list[8], in_assist;   // snap assist: fill the other half
+static float asx, asy, asw, ash;   // mouse resting on a maximize button (opens the snap flyout)
 
 static float rad(Win *w) { return w->state == 1 ? 0 : 8; }
 static int idx(Win *w) { return (int)(w - wins); }
@@ -86,6 +88,27 @@ void wm_snap(Win *w, float x, float y, float ww, float hh, const char *name) {
     if (w->state == 0) { w->rx = w->x; w->ry = w->y; w->rw = w->w; w->rh = w->h; }
     set_rect(w, x, y + TB, ww, hh - TB, 2);
     MARK("SNAP %s %s %d %d %d %d", w->exe, name, (int)w->x, (int)w->y, (int)w->w, (int)w->h);
+    // snap assist: a window took a full-height side, offer the other windows for the rest
+    assist_open = 0;
+    if (in_assist || hh < (WORK_Y1 - WORK_Y0) * 0.8f || ww > SCR_W * 0.8f) return;
+    assist_n = 0;
+    for (int i = nz - 1; i >= 0 && assist_n < 6; i--) {
+        Win *o = &wins[zord[i]];
+        if (o != w && o->used && o->mapped && !o->closing && !o->minimized) assist_list[assist_n++] = zord[i];
+    }
+    if (!assist_n) return;
+    bool left = x < SCR_W / 2;
+    asx = left ? x + ww + GAP : GAP; asw = left ? SCR_W - GAP - asx : x - 2 * GAP;
+    asy = y; ash = hh;
+    if (asw < 300) return;
+    assist_open = 1; dirty = 1;
+    MARK("SNAP_ASSIST %d", assist_n);
+}
+static void assist_card(int i, float *x, float *y, float *w, float *h) {
+    int per = mini(asw > 900 ? 3 : 2, assist_n), rows = (assist_n + per - 1) / per;
+    float cw = fminf(300, (asw - 40 - (per - 1) * 20) / per), ch = cw * 0.72f;
+    float gw = per * cw + (per - 1) * 20, gh = rows * ch + (rows - 1) * 20;
+    *x = asx + (asw - gw) / 2 + (i % per) * (cw + 20); *y = asy + (ash - gh) / 2 + (i / per) * (ch + 20); *w = cw; *h = ch;
 }
 static void snap_frac(Win *w, float fx, float fy, float fw, float fh, const char *name) {
     float W = SCR_W - 2 * GAP, H = WORK_Y1 - WORK_Y0 - 2 * GAP;
@@ -199,7 +222,7 @@ void wm_client(Win *w) {
             int old = w->front;
             w->front = m.a; w->bw = mini(m.b, BUF_W); w->bh = mini(m.c, BUF_H);
             if (old >= 0 && old != m.a) msg_send(w->fd, M_RELEASE, old, 0, 0, 0, 0, 0, -1);
-            if (!w->mapped) { w->mapped = 1; start_anim(w, AN_OPEN); wm_focus(w); MARK("WINDOW_MAPPED %s %d %d %d %d %d", w->exe, w->id, (int)w->x, (int)w->y, (int)w->w, (int)w->h); }
+            if (!w->mapped) { w->mapped = 1; assist_open = 0; start_anim(w, AN_OPEN); wm_focus(w); MARK("WINDOW_MAPPED %s %d %d %d %d %d", w->exe, w->id, (int)w->x, (int)w->y, (int)w->w, (int)w->h); }
             dirty = 1;
             break;
         }
@@ -213,6 +236,7 @@ void wm_client(Win *w) {
         case M_CLIP_SET: free(clipboard); clipboard = xstrdup(m.s); MARK("CLIPBOARD %zu", strlen(clipboard)); break;
         case M_CLIP_GET: msg_send(w->fd, M_CLIP_DATA, 0, 0, 0, 0, 0, clipboard ? clipboard : "", -1); break;
         case M_SET_THEME:
+            crossfade_begin();
             theme_set(m.a, m.b, m.c);
             settings_save();
             wm_broadcast_theme();
@@ -315,6 +339,23 @@ int wm_cursor(float x, float y) {
 
 int wm_mouse(IEv *e) {
     float x = e->x, y = e->y;
+    if (assist_open) {
+        if (e->type == IE_MOVE) dirty = 1;
+        if (e->type == IE_DOWN) {
+            assist_open = 0; dirty = 1;
+            for (int i = 0; i < assist_n; i++) {
+                float cx, cy, cw, ch;
+                assist_card(i, &cx, &cy, &cw, &ch);
+                Win *o = &wins[assist_list[i]];
+                if (x >= cx && x < cx + cw && y >= cy && y < cy + ch && o->used && !o->closing) {
+                    in_assist = 1; wm_snap(o, asx, asy, asw, ash, "assist"); in_assist = 0;
+                    wm_focus(o);
+                    return 1;
+                }
+            }
+            if (x >= asx && x < asx + asw && y >= asy && y < asy + ash) return 1;
+        }
+    }
     // snap flyout (drawn above windows)
     if (flyout_open && flyout_win && (e->type == IE_DOWN || e->type == IE_MOVE)) {
         for (int l = 0; l < 4; l++)
@@ -437,6 +478,7 @@ int wm_mouse(IEv *e) {
 
 void wm_key(IEv *e) {
     if (e->type != IE_KEY || !e->key) return;
+    if (assist_open) { assist_open = 0; dirty = 1; if (e->key == K_ESC) return; }
     Win *w = focus;
     if (!w || w->closing || w->minimized) return;
     if ((e->mods & MOD_SUPER) && e->key == K_LEFT) { snap_frac(w, 0, 0, .5f, 1, "left"); return; }
@@ -553,6 +595,9 @@ static void draw_flyout(Canvas *c) {
 
 void wm_compose(Canvas *c) {
     g_buf(c, wall->px, SCR_W, SCR_W, SCR_H, 0, 0, SCR_W, SCR_H, 0, 0, 255, 1);
+    // build watermark, bottom right (like an Insider build), doubles as the disclaimer
+    text_r(c, F_REG, 12, 0, SCR_W - 18, SCR_H - 34, 0x99FFFFFF, "Windows 12 · unofficial fan build " W12_VERSION);
+    text_r(c, F_REG, 12, 0, SCR_W - 18, SCR_H - 16, 0x99FFFFFF, "Not affiliated with Microsoft");
     if (snap_prev) {   // drag-to-edge preview, behind the window being dragged
         g_glass(c, spx, spy, spw, sph, snap_prev == 3 ? 0 : 8, c_alpha(TH.accent, 0.25f));
         g_rrect_line(c, spx, spy, spw, sph, snap_prev == 3 ? 0 : 8, 1.5f, c_alpha(TH.accent, 0.8f));
@@ -562,4 +607,26 @@ void wm_compose(Canvas *c) {
         if (w->used && w->mapped) draw_window(c, w);
     }
     if (flyout_open && flyout_win && flyout_win->used && !flyout_win->closing) draw_flyout(c);
+    if (assist_open) {
+        g_glass(c, asx, asy, asw, ash, 10, TH.dark ? 0xC0202024 : 0xB8EEF0F4);
+        g_rrect_line(c, asx, asy, asw, ash, 10, 1, TH.dark ? 0x30FFFFFF : 0x60FFFFFF);
+        text_c(c, F_SEMI, 15, 0, asx + asw / 2, asy + 40, TH.text, "Choose a window to fill this space");
+        for (int i = 0; i < assist_n; i++) {
+            Win *o = &wins[assist_list[i]];
+            if (!o->used || o->closing) continue;
+            float cx, cy, cw, ch;
+            assist_card(i, &cx, &cy, &cw, &ch);
+            bool hov = mouse_x >= cx && mouse_x < cx + cw && mouse_y >= cy && mouse_y < cy + ch;
+            g_shadow(c, cx, cy, cw, ch, 8, 16, 60, 4);
+            g_rrect(c, cx, cy, cw, ch, 8, 8, TH.dark ? 0xFF2B2B2B : 0xFFFFFFFF);
+            if (hov) g_rrect_line(c, cx - 3, cy - 3, cw + 6, ch + 6, 10, 2.5f, TH.accent);
+            if (o->app >= 0) icon_app(c, o->app, cx + 10, cy + 8, 18);
+            char *t = text_ellipsize(F_REG, 13, o->title, cw - 44);
+            text(c, F_REG, 13, 0, cx + 36, cy + 22, TH.text, t); free(t);
+            if (o->front >= 0 && o->shm) {
+                float tw = cw - 16, th = ch - 42, sc = fminf(tw / o->bw, th / o->bh), pw = o->bw * sc, ph = o->bh * sc;
+                g_buf(c, o->shm + (size_t)o->front * BUF_W * BUF_H, BUF_W, o->bw, o->bh, cx + 8 + (tw - pw) / 2, cy + 34 + (th - ph) / 2, pw, ph, 4, 4, 255, 1);
+            }
+        }
+    }
 }

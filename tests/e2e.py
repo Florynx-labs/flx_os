@@ -208,7 +208,9 @@ def main():
     gt = open_from_start("terminal")
     m = mark(); q.key("meta_l-right")
     check("Win+Right snaps a window to the right half", wait(r"SNAP terminal right", 3, m))
-    time.sleep(0.5); shot("snap_side_by_side")
+    check("snap assist offers the other windows", wait(r"SNAP_ASSIST \d+", 3, m))
+    time.sleep(0.4); shot("snap_assist")
+    q.key("esc"); time.sleep(0.4); shot("snap_side_by_side")
     ge = open_from_start("explorer")
     if ge:
         x, y, w, h = ge

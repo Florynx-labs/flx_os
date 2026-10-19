@@ -38,6 +38,17 @@ static void draw_resize_cursor(Canvas *c, float x, float y, int kind) {
     }
 }
 
+// theme crossfade: snapshot the old frame, fade it out over the new one
+static Canvas *scene, *fade_from;
+static double fade_t = -1;
+void crossfade_begin(void) {
+    if (!scene) return;
+    if (!fade_from) fade_from = canvas_new(SCR_W, SCR_H);
+    memcpy(fade_from->px, scene->px, (size_t)SCR_W * SCR_H * 4);
+    fade_t = now();
+}
+int crossfading(void) { return fade_t >= 0; }
+
 static int listen_sock(void) {
     int s = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
     struct sockaddr_un a = { .sun_family = AF_UNIX };
@@ -53,7 +64,7 @@ int main(void) {
     LOG("comp: Windows 12 compositor starting");
     Canvas *scr = drm_init();
     if (!scr) { MARK("ERROR no display"); sleep(3); return 1; }
-    Canvas *scene = canvas_new(SCR_W, SCR_H);
+    scene = canvas_new(SCR_W, SCR_H);
     font_init();
     input_init();
     int lfd = listen_sock();
@@ -74,7 +85,7 @@ int main(void) {
         if (lfd >= 0) pf[np++] = (struct pollfd){ lfd, POLLIN, 0 };
         int wmap[MAXWIN + 12];
         for (int i = 0; i < MAXWIN; i++) if (wins[i].used && wins[i].fd >= 0) { wmap[np] = i; pf[np++] = (struct pollfd){ wins[i].fd, POLLIN, 0 }; }
-        bool busy = dirty || wm_animating() || shell_animating();
+        bool busy = dirty || wm_animating() || shell_animating() || crossfading();
         int timeout = busy ? maxi(0, (int)((next - now()) * 1000)) : 50;
         poll(pf, np, timeout);
         if (lfd >= 0 && pf[ni].revents & POLLIN) wm_accept(lfd);
@@ -96,13 +107,18 @@ int main(void) {
         if (t < next) continue;
         next = t + 1.0 / 60;
         bool moved = mouse_x != cx || mouse_y != cy;
-        if (!(dirty || wm_animating() || shell_animating() || moved)) continue;
+        if (!(dirty || wm_animating() || shell_animating() || crossfading() || moved)) continue;
         double t0 = now();
-        if (dirty || wm_animating() || shell_animating()) {
+        if (dirty || wm_animating() || shell_animating() || crossfading()) {
             dirty = 0;
             if (phase != PH_BOOT && !(phase == PH_LOCK && shell_animating() == 0)) wm_compose(scene);
             else if (phase == PH_LOCK) wm_compose(scene);
             shell_draw(scene);
+            if (fade_t >= 0) {
+                float k = (float)(now() - fade_t) / 0.4f;
+                if (k >= 1) fade_t = -1;
+                else g_buf(scene, fade_from->px, SCR_W, SCR_W, SCR_H, 0, 0, SCR_W, SCR_H, 0, 0, (int)(255 * (1 - ease_out(k))), 1);
+            }
             composes++;
         }
         memcpy(scr->px, scene->px, (size_t)SCR_W * SCR_H * 4);

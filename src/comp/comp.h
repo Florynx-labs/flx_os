@@ -101,6 +101,8 @@ int hit_at(float x, float y);
 extern int hover_id;
 int wm_grabbing(void);
 int wm_cursor(float x, float y);
+void crossfade_begin(void);
+int crossfading(void);
 void lock_now(void);
 // panel slide state 0..1
 extern float start_p, widgets_p, copilot_p;
