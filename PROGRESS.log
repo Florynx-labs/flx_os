@@ -33,3 +33,4 @@
 21:07 Theme switches now crossfade (old frame snapshot faded out over 0.4 s, hides apps repainting one by one)
 21:08 Snap assist: after a half snap, the other half offers the remaining windows as live thumbnails; click one to fill it. Bottom-right build watermark "unofficial fan build / Not affiliated with Microsoft"
 21:09 e2e 50/50 (added a snap-assist check)
+21:10 Quick Settings flyout (click network/volume/battery or Win+A): real network tile, dark mode / accent / wallpaper tiles that change the theme live, lock, sliders. Desktop right-click menu (Personalize, Display settings, Open in Terminal, Refresh)

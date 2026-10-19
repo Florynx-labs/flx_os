@@ -361,7 +361,7 @@ static char hover_url[512];
 static const char *QUICK[][2] = {
     { "Wikipedia", "https://en.m.wikipedia.org/wiki/Microsoft_Windows" }, { "Hacker News", "https://news.ycombinator.com/" },
     { "example.com", "https://example.com/" }, { "CNN Lite", "https://lite.cnn.com/" },
-    { "NPR Text", "https://text.npr.org/" }, { "Lumen OS 2 (GitHub)", "https://github.com/dosty340-max" } };
+    { "NPR Text", "https://text.npr.org/" }, { "DuckDuckGo Lite", "https://lite.duckduckgo.com/lite/" } };
 
 static void draw_page(Canvas *c, Tab *t) {
     float top = TOP, bot = U.h, W = U.w;

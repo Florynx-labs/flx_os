@@ -11,7 +11,7 @@ int hover_id = -1;
 static double boot_t0, unlock_t = -1, lock_shown_t;
 static float lock_drag; static float lock_y0; static int lock_down;
 static char query[128];
-static int power_menu, all_apps;
+static int power_menu, all_apps, qs_open, dm_open; static float dm_x, dm_y, qs_vol = 0.7f, qs_bright = 1.0f; static int qs_drag;
 static int super_alone;
 static int alt_sel; static int alt_list[MAXWIN], alt_n;
 static char recent[8][256]; static int nrecent;
@@ -30,6 +30,8 @@ static const char *PINNED[] = { "explorer", "browser", "terminal", "notepad", "s
 enum {
     H_NONE, H_START_BTN, H_SEARCH_BTN, H_WIDGETS_BTN, H_COPILOT_BTN, H_TOP_SEARCH, H_NET, H_CLOCK, H_VOL,
     H_START_PANEL, H_START_SEARCH, H_POWER, H_PWR_LOCK, H_PWR_RESTART, H_PWR_SHUT, H_USER, H_ALLAPPS,
+    H_QS_PANEL = 20, H_QS_NET, H_QS_DARK, H_QS_ACCENT, H_QS_WALL, H_QS_LOCK, H_QS_SETTINGS, H_QS_VOL, H_QS_BRIGHT, H_QS_GEAR,
+    H_DM_PANEL = 35, H_DM_PERSONAL, H_DM_DISPLAY, H_DM_TERMINAL, H_DM_REFRESH,
     H_TB_APP = 50, H_START_APP = 80, H_RESULT = 100, H_RECENT = 130,
 };
 
@@ -102,8 +104,8 @@ void shell_init(void) {
 void lock_now(void) { phase = PH_LOCK; unlock_t = -1; lock_drag = 0; lock_shown_t = now(); close_panels(); dirty = 1; MARK("READY lock"); }
 static void unlock(void) { if (unlock_t < 0) { unlock_t = now(); MARK("UNLOCK"); } }
 void close_panels(void) {
-    if (start_open || widgets_open || copilot_open) dirty = 1;
-    start_open = widgets_open = copilot_open = 0; power_menu = 0;
+    if (start_open || widgets_open || copilot_open || qs_open || dm_open) dirty = 1;
+    start_open = widgets_open = copilot_open = 0; power_menu = 0; qs_open = 0; dm_open = 0;
 }
 static void toggle_start(void) {
     int o = !start_open;
@@ -466,6 +468,68 @@ static void draw_start(Canvas *c) {
     }
 }
 
+// ---- quick settings + desktop menu ---------------------------------------------------------------
+static void shell_theme(int dark, int accent, int wall) {
+    crossfade_begin();
+    theme_set(dark, accent, wall);
+    settings_save();
+    wm_broadcast_theme();
+    MARK("THEME dark=%d accent=%d wall=%d", TH.dark, TH.accent_i, TH.wall);
+}
+static void qs_tile(Canvas *c, int id, float x, float y, int glyph, const char *l1, const char *l2, int on) {
+    hit_add(id, x, y, 110, 74);
+    bool hov = hover_id == id;
+    g_rrect(c, x, y, 110, 74, 8, 8, on ? (hov ? c_mix(TH.accent, 0xFFFFFFFF, 0.12f) : TH.accent) : (hov ? (TH.dark ? 0x40FFFFFF : 0xE0FFFFFF) : (TH.dark ? 0x28FFFFFF : 0xB0FFFFFF)));
+    if (!on) g_rrect_line(c, x, y, 110, 74, 8, 1, TH.dark ? 0x20FFFFFF : 0x18000000);
+    uint32_t fg = on ? TH.accent_fg : TH.text;
+    icon_glyph(c, glyph, x + 22, y + 22, 18, fg);
+    text(c, F_SEMI, 13, 0, x + 12, y + 52, fg, l1);
+    if (l2) text(c, F_REG, 11, 0, x + 12, y + 67, c_alpha(fg, 0.8f), l2);
+}
+static void qs_slider(Canvas *c, int id, float x, float y, float w, int glyph, float v) {
+    icon_glyph(c, glyph, x + 10, y + 12, 18, TH.text);
+    hit_add(id, x + 30, y, w - 30, 24);
+    float sx = x + 40, sw = w - 50;
+    g_rrect(c, sx, y + 10, sw, 4, 2, 2, TH.dark ? 0x40FFFFFF : 0x30000000);
+    g_rrect(c, sx, y + 10, sw * v, 4, 2, 2, TH.accent);
+    g_circle(c, sx + sw * v, y + 12, 9, TH.dark ? 0xFF454545 : 0xFFFFFFFF);
+    g_circle(c, sx + sw * v, y + 12, hover_id == id ? 6 : 5, TH.accent);
+}
+static void draw_quick(Canvas *c) {
+    if (!qs_open) return;
+    float w = 384, h = 316, x = SCR_W - 12 - w, y = TOP + 12;
+    glass_panel(c, x, y, w, h, 12, 1);
+    hit_add(H_QS_PANEL, x, y, w, h);
+    NetInfo ni; netinfo_read(&ni);
+    float tx = x + 16, ty = y + 16;
+    qs_tile(c, H_QS_NET, tx, ty, ni.up ? G_WIFI : G_WIFI_OFF, ni.up ? "Connected" : "Offline", ni.up ? ni.ip : "no DHCP lease", ni.up);
+    qs_tile(c, H_QS_DARK, tx + 120, ty, G_MOON, "Dark mode", TH.dark ? "On" : "Off", TH.dark);
+    qs_tile(c, H_QS_ACCENT, tx + 240, ty, G_PALETTE, "Accent", ACCENT_NAMES[TH.accent_i], 0);
+    qs_tile(c, H_QS_WALL, tx, ty + 84, G_DISPLAY, "Wallpaper", WALL_NAMES[TH.wall], 0);
+    qs_tile(c, H_QS_LOCK, tx + 120, ty + 84, G_LOCK, "Lock", "Win+L", 0);
+    qs_tile(c, H_QS_SETTINGS, tx + 240, ty + 84, G_GEAR, "Settings", "All settings", 0);
+    qs_slider(c, H_QS_BRIGHT, tx, ty + 180, w - 32, G_SUN, qs_bright);
+    qs_slider(c, H_QS_VOL, tx, ty + 220, w - 32, G_VOLUME, qs_vol);
+    g_rect(c, x, y + h - 52, w, 1, TH.dark ? 0x20FFFFFF : 0x18000000);
+    icon_glyph(c, G_BATTERY, x + 30, y + h - 26, 20, TH.text);
+    text(c, F_REG, 13, 0, x + 50, y + h - 21, TH.sub, "100% · plugged in (virtual machine)");
+}
+static void draw_desk_menu(Canvas *c) {
+    if (!dm_open) return;
+    const char *L[4] = { "Personalize", "Display settings", "Open in Terminal", "Refresh" };
+    int G[4] = { G_PALETTE, G_DISPLAY, G_APPS, G_REFRESH };
+    float w = 230, h = 4 * 38 + 10, x = fminf(dm_x, SCR_W - w - 8), y = fminf(dm_y, SCR_H - h - 8);
+    glass_panel(c, x, y, w, h, 8, 1);
+    hit_add(H_DM_PANEL, x, y, w, h);
+    for (int i = 0; i < 4; i++) {
+        float iy = y + 5 + i * 38;
+        hit_add(H_DM_PERSONAL + i, x + 5, iy, w - 10, 36);
+        if (hover_id == H_DM_PERSONAL + i) g_rrect(c, x + 5, iy, w - 10, 36, 5, 5, TH.hover);
+        if (i == 2) icon_app(c, APP_TERMINAL, x + 16, iy + 9, 18); else icon_glyph(c, G[i], x + 25, iy + 18, 16, TH.text);
+        text(c, F_REG, 14, 0, x + 46, iy + 23, TH.text, L[i]);
+    }
+}
+
 // ---- alt+tab -------------------------------------------------------------------------------------
 static void alttab_build(void) {
     alt_n = 0;
@@ -516,6 +580,8 @@ void shell_draw(Canvas *c) {
         widgets_draw(c, widgets_p);
         copilot_draw(c, copilot_p);
         draw_start(c);
+        draw_quick(c);
+        draw_desk_menu(c);
         draw_alttab(c);
     }
     if (phase == PH_LOCK) draw_lock(c);
@@ -550,6 +616,14 @@ int shell_mouse(IEv *e) {
     if (wm_grabbing()) return 0;
     if (alttab_open) return 1;
     int h = hit_at(e->x, e->y);
+    if (qs_drag && (e->type == IE_MOVE || e->type == IE_UP)) {
+        float x0 = SCR_W - 12 - 384 + 16 + 40, sw = 384 - 32 - 50;
+        float v = clampf((e->x - x0) / sw, 0, 1);
+        if (qs_drag == 1) qs_bright = v; else qs_vol = v;
+        if (e->type == IE_UP) { MARK("QUICK %s %.0f", qs_drag == 1 ? "brightness" : "volume", v * 100); qs_drag = 0; }
+        dirty = 1;
+        return 1;
+    }
     if (e->type == IE_MOVE) {
         if (h != hover_id) { hover_id = h; dirty = 1; tip_id = h; tip_t = now(); }
         if (widgets_open && widgets_mouse(e, widgets_p)) return 1;
@@ -563,6 +637,9 @@ int shell_mouse(IEv *e) {
         if (copilot_open && copilot_mouse(e, copilot_p)) return 1;
         if (start_open && h != H_START_BTN && (h < H_START_PANEL || h > H_ALLAPPS) && h < H_START_APP) { close_panels(); return 1; }
         if (power_menu && h != H_POWER && (h < H_PWR_LOCK || h > H_PWR_SHUT)) power_menu = 0;
+        if (qs_open && (h < H_QS_PANEL || h > H_QS_GEAR) && h != H_NET) { qs_open = 0; if (h < 0) return 1; }
+        if (dm_open && (h < H_DM_PANEL || h > H_DM_REFRESH)) { dm_open = 0; if (h < 0) return 1; }
+        if (h < 0 && e->btn == 2 && !win_at(e->x, e->y) && e->y > TOP && !start_open) { close_panels(); dm_open = 1; dm_x = e->x; dm_y = e->y; MARK("DESKTOP_MENU"); return 1; }
         if ((widgets_open && h != H_WIDGETS_BTN) || (copilot_open && h != H_COPILOT_BTN)) {
             if (h < 0) { close_panels(); return 1; }
         }
@@ -570,7 +647,20 @@ int shell_mouse(IEv *e) {
         case H_START_BTN: case H_SEARCH_BTN: case H_TOP_SEARCH: toggle_start(); return 1;
         case H_WIDGETS_BTN: { int o = !widgets_open; close_panels(); widgets_open = o; MARK("WIDGETS %s", o ? "open" : "close"); return 1; }
         case H_COPILOT_BTN: { int o = !copilot_open; close_panels(); copilot_open = o; MARK("COPILOT %s", o ? "open" : "close"); return 1; }
-        case H_NET: launch("settings", "network"); return 1;
+        case H_NET: { int o = !qs_open; close_panels(); qs_open = o; MARK("QUICK %s", o ? "open" : "close"); return 1; }
+        case H_QS_NET: launch("settings", "network"); close_panels(); return 1;
+        case H_QS_DARK: shell_theme(!TH.dark, TH.accent_i, TH.wall); return 1;
+        case H_QS_ACCENT: shell_theme(TH.dark, (TH.accent_i + 1) % NACCENT, TH.wall); return 1;
+        case H_QS_WALL: shell_theme(TH.dark, TH.accent_i, (TH.wall + 1) % NWALL); return 1;
+        case H_QS_LOCK: lock_now(); return 1;
+        case H_QS_SETTINGS: case H_QS_GEAR: launch("settings", 0); close_panels(); return 1;
+        case H_QS_BRIGHT: qs_drag = 1; return 1;
+        case H_QS_VOL: qs_drag = 2; return 1;
+        case H_QS_PANEL: case H_DM_PANEL: return 1;
+        case H_DM_PERSONAL: launch("settings", "personalization"); close_panels(); return 1;
+        case H_DM_DISPLAY: launch("settings", 0); close_panels(); return 1;
+        case H_DM_TERMINAL: launch("terminal", 0); close_panels(); return 1;
+        case H_DM_REFRESH: close_panels(); load_wallpaper(); dirty = 1; return 1;
         case H_CLOCK: { int o = !widgets_open; close_panels(); widgets_open = o; return 1; }
         case H_POWER: power_menu = !power_menu; return 1;
         case H_PWR_LOCK: lock_now(); return 1;
@@ -630,9 +720,10 @@ int shell_key(IEv *e) {
         if (k == 'e') { launch("explorer", 0); return 1; }
         if (k == 'l') { lock_now(); return 1; }
         if (k == 's') { toggle_start(); dirty = 1; return 1; }
+        if (k == 'a') { int o = !qs_open; close_panels(); qs_open = o; MARK("QUICK %s", o ? "open" : "close"); return 1; }
         return 0;   // Win+arrows go to the window manager
     }
-    if (e->key == K_ESC && (start_open || widgets_open || copilot_open)) { close_panels(); MARK("PANELS close"); return 1; }
+    if (e->key == K_ESC && (start_open || widgets_open || copilot_open || qs_open || dm_open)) { close_panels(); MARK("PANELS close"); return 1; }
     if (start_open) {
         int n = strlen(query);
         if (e->key == K_BACKSPACE) { if (n) query[n - 1] = 0; }

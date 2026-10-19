@@ -26,10 +26,15 @@ Unofficial fan project, not affiliated with Microsoft. Linux kernel below; every
 ## Milestones
 - [x] M0 repo, toolchain, kernel, own init on serial
 - [x] M1 DRM 1920x1080, boot animation, input, cursor, QMP harness, first screenshot
-- [ ] M2 compositor, window protocol, WM, libw12ui, lock screen
-- [ ] M3 taskbar, top bar, Start, glass, themes
-- [ ] M4 Terminal + shell, Notepad, Calculator, Explorer, Settings/About
-- [ ] M5 net stack, Browser, Task Manager, network info
-- [ ] M6 Copilot + bridge + offline fallback
-- [ ] M7 Widgets, snap layouts, Alt+Tab, Minesweeper, polish
-- [ ] M8 proof mode, toolkit scan, e2e, README
+- [x] M2 compositor, window protocol, WM, libw12ui, lock screen
+- [x] M3 taskbar, top bar, Start, glass, themes
+- [x] M4 Terminal + shell, Notepad, Calculator, Explorer, Settings/About
+- [x] M5 net stack, Browser, Task Manager, network info
+- [x] M6 Copilot + bridge + offline fallback
+- [x] M7 Widgets, snap layouts, Alt+Tab, Minesweeper, polish
+- [x] M8 proof mode, toolkit scan, e2e, README
+
+## Extras beyond the brief
+- Snap assist, Quick Settings flyout (Win+A), desktop context menu, theme crossfade
+- w12sh line editor with history, Start > All apps, resize cursors, build watermark
+- Restart/shutdown via reboot(2) verified; files persist across reboots on the ext2 disk

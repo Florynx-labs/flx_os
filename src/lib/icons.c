@@ -251,7 +251,7 @@ void icon_glyph(Canvas *c, int g, float cx, float cy, float s, uint32_t col) {
         g_circle(c, cx, cy, s * .2f, col);
         for (int i = 0; i < 8; i++) { float a = i * (float)M_PI / 4; g_line(c, cx + cosf(a) * s * .3f, cy + sinf(a) * s * .3f, cx + cosf(a) * s * .42f, cy + sinf(a) * s * .42f, w, col); }
         break;
-    case G_MOON: g_arc(c, cx + s * .04f, cy, s * .26f, -1.9f, 1.9f, s * .16f, col); break;
+    case G_MOON: g_arc(c, cx - s * .04f, cy, s * .2f, -1.75f, 1.75f, s * .22f, col); break;
     case G_CLOUD: case G_RAIN:
         g_circle(c, cx - s * .16f, cy + s * .02f, s * .2f, col); g_circle(c, cx + s * .08f, cy - s * .08f, s * .26f, col);
         g_rrect(c, cx - s * .38f, cy + s * .02f, s * .76f, s * .22f, s * .11f, s * .11f, col);

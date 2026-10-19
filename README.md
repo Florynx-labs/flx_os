@@ -42,7 +42,11 @@ browser, weather and `curl`.
 - Click / Enter / swipe up on the lock screen. **Win** opens Start; type to search.
 - Hover a window's maximize button for **snap layouts**; drag a window to a screen edge or
   corner; **Win+←/→/↑/↓**; **Alt+Tab**; double-click a titlebar.
-- Top bar: **Widgets** (left), search (centre), network/volume/battery/clock, **Copilot** (right).
+- Top bar: **Widgets** (left, or Win+W), search (centre), network/volume/battery opens **Quick
+  Settings** (Win+A: real network state, dark mode, accent, wallpaper, lock), clock, **Copilot**
+  (right, or Win+C).
+- After snapping a window to one half, **snap assist** offers the other windows for the rest.
+- Right-click the desktop for Personalize / Display settings / Open in Terminal.
 - Terminal: `help`, `fetch`, `ps`, `ifconfig`, `ping -c 3 10.0.2.2`, `curl https://example.com`, **`proof`**.
 - Settings → Personalization: light/dark, six accents, three wallpapers, applied live everywhere.
 - Settings → About → **Proof**.
