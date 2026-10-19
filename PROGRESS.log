@@ -1,0 +1,13 @@
+20:08 Start. Read PROMPT.md; studying Lumen OS 2 (~/Documents/PhoneOS2): build-inside.sh, drm.c, input.c, gfx.c, font.c, net/, web/, test/q.py
+20:10 Selawik: raw TTFs are not in the git tree, took them from the official 1.01 release zip (OFL) + LICENSE.txt
+20:11 git init; copied stb_truetype/stb_image/BearSSL/cacert + Lumen kernel fragment; seeded docker volume w12-kbuild with Lumen's linux-6.12.113 tree (saves the download)
+20:15 Wrote PLAN in head: compositor process owns DRM+evdev, apps are separate processes (SOCK_SEQPACKET + memfd double buffers with explicit release), libw12ui toolkit, w12-netd for DHCP
+20:16 Kernel fragment: Lumen's + UNIX98_PTYS (terminal), EXT2 (persistent /home), MEMFD; dropped sound
+20:21 Kernel 6.12.113 built in ~4 min (reused Lumen object tree in the w12-kbuild volume)
+20:24 libw12: gfx.c ported from Lumen + new soft shadows, frosted-glass blur (downsample+box), gradients, AA polygons; font.c with Selawik (5 weights)
+20:27 Original icons drawn in code: glass-pane-in-perspective logo, app icons, ~50 monoline glyphs; theme palette (6 accents, light/dark)
+20:28 PID 1 init (mounts, ext2 /home, respawn, power), w12-netd (Lumen DHCP/rtnetlink), net lib (DNS/HTTP/TLS) + web engine ported
+20:30 Build-time wallpaper generator (bloom/aurora/dune, 1920x1080, dithered); verify_no_toolkits.sh + loc.sh wired into the build
+20:31 Compositor: wm.c (protocol server, Mica titlebars, shadows, drag/resize/snap/animations), shell.c (boot, lock, taskbar, top bar, Start, Alt+Tab), panels.c (Widgets, Copilot)
+20:33 First full build: toolkit scan PASS, initramfs 25 MB
+20:34 FIRST BOOT: init -> compositor in 38 ms, DHCP 36 ms, live weather over our own HTTPS (open-meteo) at 1.2 s, lock screen at 3 s. 3.2 ms avg frame work
