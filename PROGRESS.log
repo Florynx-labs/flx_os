@@ -40,3 +40,4 @@
 21:18 HANDOVER.md for the recording session: QMP path, timings, fixed coordinates, keyboard shortcuts, markers, demo beats
 21:20 Final build + e2e: 50/50 PASS in 103 s, 36 screenshots in tests/out/; final screenshot set copied to screenshots/M8-final-*. data/disk.img removed so the next ./run.sh starts from a fresh home disk
 21:20 Milestone times (actual): M0+M1 20:08-20:34 (26 min, kernel reused from Lumen's tree), M2 -20:40, M3 shell written with the compositor and verified 20:38, M4 -20:47, M5 -20:52, M6 -20:52, M7 -20:53, M8 20:53-21:20 (e2e, README, polish: snap assist, quick settings, crossfade, parallel compositing)
+21:21 Recording request from the video session: cursor was already software-drawn into the framebuffer (visible in screendumps); lengthened animations for 30 fps video: window open 250 ms, close 220, minimize/restore 260, move/snap 220, panel slides 250. e2e 50/50

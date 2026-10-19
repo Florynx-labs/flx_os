@@ -261,7 +261,7 @@ void wm_tick(void) {
     for (int i = 0; i < MAXWIN; i++) {
         Win *w = &wins[i];
         if (!w->used || !w->anim) continue;
-        float dur = w->anim == AN_CLOSE ? 0.16f : w->anim == AN_MIN || w->anim == AN_UNMIN ? 0.24f : w->anim == AN_MOVE ? 0.18f : 0.2f;
+        float dur = w->anim == AN_CLOSE ? 0.22f : w->anim == AN_MIN || w->anim == AN_UNMIN ? 0.26f : w->anim == AN_MOVE ? 0.22f : 0.25f;
         if (t - w->anim_t >= dur) {
             if (w->anim == AN_CLOSE) { destroy(w); continue; }
             w->anim = AN_NONE;
@@ -493,7 +493,7 @@ void wm_key(IEv *e) {
 static void anim_rect(Win *w, float *x, float *y, float *ww, float *hh, int *alpha) {
     *x = w->x; *y = w->y - TB; *ww = w->w; *hh = w->h + TB; *alpha = 255;
     if (!w->anim) return;
-    float dur = w->anim == AN_CLOSE ? 0.16f : w->anim == AN_MIN || w->anim == AN_UNMIN ? 0.24f : w->anim == AN_MOVE ? 0.18f : 0.2f;
+    float dur = w->anim == AN_CLOSE ? 0.22f : w->anim == AN_MIN || w->anim == AN_UNMIN ? 0.26f : w->anim == AN_MOVE ? 0.22f : 0.25f;
     float t = clampf((now() - w->anim_t) / dur, 0, 1), k;
     float cx = *x + *ww / 2, cy = *y + *hh / 2;
     switch (w->anim) {

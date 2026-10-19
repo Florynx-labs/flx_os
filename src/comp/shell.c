@@ -125,7 +125,7 @@ void shell_tick(void) {
     static double last;
     double t = now();
     float dt = (float)fmin(t - last, 0.05); last = t;
-    float k = dt / 0.2f;
+    float k = dt / 0.25f;   // panel slides: 250 ms (reads well on 30 fps video)
 #define STEP(p, tgt) do { float T_ = (tgt); if (p < T_) p = fminf(T_, p + k); else p = fmaxf(T_, p - k); } while (0)
     float before = start_p + widgets_p + copilot_p;
     STEP(start_p, start_open);
