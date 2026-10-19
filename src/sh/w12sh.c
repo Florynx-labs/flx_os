@@ -125,6 +125,7 @@ static void cmd_ps(void) {
         if (proc_name(pid, name, sizeof name, exe, sizeof exe, &rss)) continue;
         if (exe[0] == '[') continue;    // ps hides kernel threads; proof shows them
         char sz[32]; human_size(rss * 1024.0, sz, sizeof sz);
+        if (!rss) snprintf(sz, sizeof sz, "< 4 KB");
         p("%5d  %-18s %8s  %s\n", pid, name, sz, exe);
     }
     if (d) closedir(d);

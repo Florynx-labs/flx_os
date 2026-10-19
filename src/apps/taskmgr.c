@@ -169,7 +169,7 @@ static void draw_processes(Canvas *c, float x, float y, float w, float h) {
             text(c, F_REG, 13, 0, cx[2], ry + 21, TH.sub, p->state == 'R' ? "Running" : p->state == 'S' ? "Sleeping" : p->state == 'I' ? "Idle" : p->state == 'Z' ? "Zombie" : "Waiting");
             if (p->cpu >= 0.05f) g_rect(c, cx[3] - 6, ry, w * 0.09f, lh - 2, c_alpha(0xFFFFB020, clampf(p->cpu / 40, 0.08f, 0.5f)));
             snprintf(b, sizeof b, "%.1f%%", p->cpu); text(c, F_REG, 13, 0, cx[3], ry + 21, TH.text, b);
-            human_size(p->rss_kb * 1024.0, b, sizeof b); if (p->kthread) snprintf(b, sizeof b, "-");
+            human_size(p->rss_kb * 1024.0, b, sizeof b); if (p->kthread) snprintf(b, sizeof b, "-"); else if (!p->rss_kb) snprintf(b, sizeof b, "< 4 KB");
             text(c, F_REG, 13, 0, cx[4], ry + 21, TH.text, b);
             char *ex = text_ellipsize(F_REG, 13, p->kthread ? "[kernel]" : p->exe, x + w - cx[5] - 16);
             text(c, F_REG, 13, 0, cx[5], ry + 21, p->kthread ? TH.dim : TH.text, ex); free(ex);
