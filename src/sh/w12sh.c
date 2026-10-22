@@ -307,38 +307,24 @@ static void cmd_fetch(void) {
     long used_mb = (tot - av) / 1024, tot_mb = tot / 1024;
     int upmin = (int)(up / 60);
     // ascii art: FLX diamond mark
-    p("  " C_YELLOW "   ...:::::....   " C_RESET "\n");
-    p("  " C_YELLOW "  .:        :..  " C_RESET "   " C_BOLD C_CYAN "flx@flx-os" C_RESET "\n");
-    p("  " C_YELLOW " .:  .####.  :.  " C_RESET "   " C_DIM "----------" C_RESET "\n");
-    p("  " C_YELLOW " :  .######.  :  " C_RESET "   " C_CYAN "OS" C_RESET "       FLX OS " W12_VERSION " (Dev)\n");
-    p("  " C_YELLOW " :  ###  ###  :  " C_RESET "   " C_CYAN "Host" C_RESET "     FLX Laptop\n");
-    p("  " C_YELLOW " .:  '####'  :.  " C_RESET "   " C_CYAN "Kernel" C_RESET "   %s\n", kv);
-    p("  " C_YELLOW "  ':.      .:'   " C_RESET "   " C_CYAN "Uptime" C_RESET "   %d mins\n", upmin);
-    p("  " C_YELLOW "           " C_RESET "   " C_CYAN "Packages" C_RESET " 9 (flx-native)
-");
-    p("                   " C_CYAN "Shell" C_RESET "    flxsh " W12_VERSION "
-");
-    p("                   " C_CYAN "Resolution" C_RESET " 1920x1080
-");
-    p("                   " C_CYAN "DE" C_RESET "       FLX Desktop
-");
-    p("                   " C_CYAN "WM" C_RESET "       flx-compositor
-");
-    p("                   " C_CYAN "Theme" C_RESET "    FLX Dark
-");
-    p("                   " C_CYAN "Icons" C_RESET "    FLX Icons
-");
-    p("                   " C_CYAN "CPU" C_RESET "      %s
-", ni.ifname[0] ? "ARM64 (QEMU virt, -accel hvf)" : "ARM64 (QEMU virt)");
-    p("                   " C_CYAN "GPU" C_RESET "      virtio-gpu (DRM/KMS)
-");
-    p("                   " C_CYAN "Memory" C_RESET "   %ldMiB / %ldMiB
-", used_mb, tot_mb);
-    p("
-");
-    p("   [40m   [41m   [42m   [43m   [44m   [45m   [46m   [47m   [0m
-
-");
+    p("  " C_YEL "   ...:::::....   " C_RESET "\n");
+    p("  " C_YEL "  .:        :..  " C_RESET "   " C_BOLD C_CYAN "flx@flx-os" C_RESET "\n");
+    p("  " C_YEL " .:  .####.  :.  " C_RESET "   " C_DIM "----------" C_RESET "\n");
+    p("  " C_YEL " :  .######.  :  " C_RESET "   " C_CYAN "OS" C_RESET "       FLX OS " W12_VERSION " (Dev)\n");
+    p("  " C_YEL " :  ###  ###  :  " C_RESET "   " C_CYAN "Host" C_RESET "     FLX Laptop\n");
+    p("  " C_YEL " .:  '####'  :.  " C_RESET "   " C_CYAN "Kernel" C_RESET "   %s\n", kv);
+    p("  " C_YEL "  ':.      .:'   " C_RESET "   " C_CYAN "Uptime" C_RESET "   %d mins\n", upmin);
+    p("  " C_YEL "           " C_RESET "   " C_CYAN "Packages" C_RESET " 9 (flx-native)\n");
+    p("                   " C_CYAN "Shell" C_RESET "    flxsh " W12_VERSION "\n");
+    p("                   " C_CYAN "Resolution" C_RESET " 1920x1080\n");
+    p("                   " C_CYAN "DE" C_RESET "       FLX Desktop\n");
+    p("                   " C_CYAN "WM" C_RESET "       flx-compositor\n");
+    p("                   " C_CYAN "Theme" C_RESET "    FLX Dark\n");
+    p("                   " C_CYAN "Icons" C_RESET "    FLX Icons\n");
+    p("                   " C_CYAN "CPU" C_RESET "      %s\n", ni.ifname[0] ? "ARM64 (QEMU virt, -accel hvf)" : "ARM64 (QEMU virt)");
+    p("                   " C_CYAN "GPU" C_RESET "      virtio-gpu (DRM/KMS)\n");
+    p("                   " C_CYAN "Memory" C_RESET "   %ldMiB / %ldMiB\n\n", used_mb, tot_mb);
+    p("    \x1b[40m    \x1b[41m    \x1b[42m    \x1b[43m    \x1b[44m    \x1b[45m    \x1b[46m    \x1b[47m    \x1b[0m\n\n");
 }
 
 static void help(void) {
