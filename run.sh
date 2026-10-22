@@ -27,14 +27,28 @@ QMP=/tmp/w12-qmp.sock
 cleanup() { [ -n "$BRIDGE" ] && kill "$BRIDGE" 2>/dev/null; rm -f "$QMP"; }
 trap cleanup EXIT INT TERM
 
-case "${W12_DISPLAY:-cocoa}" in
+if [ "$(uname -s)" = "Darwin" ]; then
+  ACCEL="-accel hvf -cpu host"
+  DEFAULT_DISP="cocoa"
+else
+  if [ "$(uname -m)" = "aarch64" ]; then
+    ACCEL="-accel kvm -cpu host"
+  else
+    ACCEL="-accel tcg -cpu cortex-a72"
+  fi
+  DEFAULT_DISP="gtk"
+fi
+
+case "${W12_DISPLAY:-$DEFAULT_DISP}" in
   cocoa) DISP="-display cocoa,zoom-to-fit=on,show-cursor=off" ;;
+  gtk)   DISP="-display gtk,zoom-to-fit=on,show-cursor=off" ;;
+  sdl)   DISP="-display sdl" ;;
   vnc)   DISP="-display none -vnc localhost:12"; echo "VNC on localhost:5912" ;;
   *)     DISP="-display none" ;;
 esac
 
 rm -f "$QMP"
-qemu-system-aarch64 -M virt -accel hvf -cpu host -smp 4 -m 2048 \
+qemu-system-aarch64 -M virt $ACCEL -smp 4 -m 2048 \
   -kernel build/Image -initrd build/initramfs.cpio \
   -append "console=ttyAMA0 loglevel=4 quiet" \
   -device virtio-gpu-pci,xres=1920,yres=1080 \

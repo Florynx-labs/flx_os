@@ -1,4 +1,4 @@
-// libw12ui client side of the Windows 12 window protocol.
+// libw12ui client side of the FLX OS window protocol.
 // One window per app process: a Unix SOCK_SEQPACKET connection to the compositor for
 // messages, and one memfd holding two BUF_W x BUF_H ARGB buffers (double buffering with
 // explicit release, so the compositor never reads a buffer we are drawing into).

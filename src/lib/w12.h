@@ -1,4 +1,4 @@
-// Windows 12 — libw12ui: shared declarations (gfx, text, theme, icons, window protocol, toolkit).
+// FLX OS — libflxui: shared declarations (gfx, text, theme, icons, window protocol, toolkit).
 // Rasteriser and text code are ported from Lumen OS 2 (MIT, Jakub Dostál).
 #pragma once
 #define _GNU_SOURCE
@@ -18,7 +18,9 @@
 
 #define SCR_W 1920
 #define SCR_H 1080
-#define W12_VERSION "12.0.1"
+#define W12_VERSION "0.1.0"
+#define W12_NAME "FLX OS"
+#define W12_TAGLINE "Plus qu'un système. Une vision."
 #define W12_SOCK "/run/w12.sock"
 
 static inline float clampf(float v, float a, float b) { return v < a ? a : v > b ? b : v; }
@@ -121,7 +123,7 @@ typedef struct { const char *exe, *title, *desc; } AppInfo;
 extern const AppInfo APPS[NAPPS];
 int app_by_exe(const char *exe);
 void icon_app(Canvas *c, int app, float x, float y, float size);
-void icon_logo(Canvas *c, float cx, float cy, float size, int alpha);   // the Windows 12 glass-pane mark
+void icon_logo(Canvas *c, float cx, float cy, float size, int alpha);   // the FLX OS fox mark (gold diamond + wing shapes)
 void icon_copilot(Canvas *c, float cx, float cy, float size);
 enum {
     G_SEARCH, G_WIFI, G_WIFI_OFF, G_VOLUME, G_BATTERY, G_POWER, G_CLOSE, G_MIN, G_MAX, G_RESTORE, G_CHEV_R, G_CHEV_L,
@@ -236,6 +238,6 @@ double json_num(Json *j, double def);
 const char *json_str(Json *j, const char *def);
 char *json_escape(const char *s);             // malloc'd "quoted"
 
-// ---- netinfo (written by w12-netd) ------------------------------------------------------------
+// ---- netinfo (written by flx-netd) ------------------------------------------------------------
 typedef struct { int up; char ifname[16], ip[20], mask[20], gw[20], dns[20], mac[20]; double since; } NetInfo;
 int netinfo_read(NetInfo *ni);

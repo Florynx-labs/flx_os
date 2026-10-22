@@ -1,5 +1,5 @@
 // Settings: System, Personalization (theme, accent, wallpaper — applied live everywhere via
-// the compositor), Network (real values from w12-netd + an HTTPS test), Apps, About + Proof.
+// the compositor), Network (real values from flx-netd + an HTTPS test), Apps, About + Proof.
 #include "w12.h"
 #include "../net/net.h"
 #include <dirent.h>
@@ -8,7 +8,7 @@
 #include <sys/utsname.h>
 
 enum { P_SYSTEM, P_PERSONAL, P_NETWORK, P_APPS, P_ABOUT, NPAGES };
-static const char *PNAMES[NPAGES] = { "System", "Personalization", "Network & internet", "Apps", "About" };
+static const char *PNAMES[NPAGES] = { "System", "Personnalisation", "Reseau & internet", "Apps", "About" };
 static const int PGLYPH[NPAGES] = { G_DISPLAY, G_PALETTE, G_NET, G_APPS, G_INFO };
 static int page = P_SYSTEM;
 static Scroll sc;
@@ -68,8 +68,8 @@ static void page_system(Canvas *c, float x, float y, float w) {
         snprintf(buf, sizeof buf, "%s used of %s · /dev/vda (ext2, persistent)", a, b);
         y = row(c, x, y, w, G_SAVE, "Storage", buf);
     }
-    y = row(c, x, y, w, G_VOLUME, "Sound", "No audio device in this build");
-    y = row(c, x, y, w, G_BATTERY, "Power", "Plugged in (virtual machine)");
+    y = row(c, x, y, w, G_VOLUME, "Sound", "Aucun peripherique audio dans cette version");
+    y = row(c, x, y, w, G_BATTERY, "Power", "Branche (machine virtuelle QEMU)");
     double up = 0; char *u = read_file("/proc/uptime", 0); if (u) { up = atof(u); free(u); }
     snprintf(buf, sizeof buf, "%dh %02dm since boot", (int)(up / 3600), (int)fmod(up / 60, 60));
     y = row(c, x, y, w, G_CLOCK, "Uptime", buf);
@@ -129,7 +129,7 @@ static void page_network(Canvas *c, float x, float y, float w) {
     kv(c, x + 24, &ky, "Default gateway", ni.gw[0] ? ni.gw : "-");
     kv(c, x + 24, &ky, "DNS server", ni.dns[0] ? ni.dns : "-");
     kv(c, x + 24, &ky, "Physical address", ni.mac);
-    kv(c, x + 24, &ky, "Source", "/run/net.conf (written by w12-netd)");
+    kv(c, x + 24, &ky, "Source", "/run/net.conf (ecrit par flx-netd)");
     y += 246;
     if (ui_button(x, y, 200, 36, testing ? "Testing…" : "Test connection", B_ACCENT) && !testing) {
         testing = 1; nettest[0] = 0;
@@ -139,7 +139,7 @@ static void page_network(Canvas *c, float x, float y, float w) {
 }
 
 static void page_apps(Canvas *c, float x, float y, float w) {
-    text(c, F_REG, 14, 0, x, y + 16, TH.sub, "Every app is its own process, statically linked against musl, written for Windows 12.");
+    text(c, F_REG, 14, 0, x, y + 16, TH.sub, "Every app is its own process, statically linked against musl, written for FLX OS.");
     y += 36;
     for (int i = 0; i < NAPPS; i++) {
         ui_card(x, y, w, 62);
@@ -156,14 +156,15 @@ static void page_apps(Canvas *c, float x, float y, float w) {
 static void page_about(Canvas *c, float x, float y, float w) {
     ui_card(x, y, w, 170);
     icon_logo(c, x + 90, y + 85, 110, 255);
-    text(c, F_SEMI, 30, 0, x + 170, y + 70, TH.text, "Windows 12");
+    text(c, F_SEMI, 26, 0, x + 170, y + 64, TH.text, "FLX OS");
+    text(c, F_REG, 13, 0, x + 172, y + 86, TH.accent, "Plus qu'un systeme. Une vision.");
     char b[256];
     char *bd = read_file("/share/proof/build.txt", 0);
     if (bd) bd[strcspn(bd, "\n")] = 0;
     snprintf(b, sizeof b, "Version " W12_VERSION " · build %s", bd ? bd : "?");
     free(bd);
     text(c, F_REG, 15, 0, x + 172, y + 100, TH.sub, b);
-    text(c, F_SEMI, 14, 0, x + 172, y + 132, TH.danger, "Unofficial fan project, not affiliated with Microsoft.");
+    text(c, F_REG, 13, 0, x + 172, y + 116, TH.sub, "par Florynx Labs · logiciel libre (MIT)");
     y += 186;
     ui_card(x, y, w, 220);
     float ky = y + 36;
@@ -184,8 +185,8 @@ static void page_about(Canvas *c, float x, float y, float w) {
     y += 236;
     ui_card(x, y, w, 120);
     icon_app(c, APP_PROOF, x + 24, y + 28, 44);
-    text(c, F_SEMI, 16, 0, x + 86, y + 46, TH.text, "Proof");
-    text(c, F_REG, 13, 0, x + 86, y + 70, TH.sub, "See every running process, lines of code and the toolkit scan.");
+    text(c, F_SEMI, 16, 0, x + 86, y + 46, TH.text, "Informations systeme");
+    text(c, F_REG, 13, 0, x + 86, y + 70, TH.sub, "Voir les processus, les lignes de code et l'analyse du systeme.");
     text(c, F_REG, 13, 0, x + 86, y + 90, TH.sub, "Linux kernel below. Everything above /dev/dri and /dev/input is written in this repo.");
     if (ui_button(x + w - 150, y + 42, 126, 36, "Open Proof", B_ACCENT)) { app_launch("proof", 0); MARK("SETTINGS proof"); }
 }

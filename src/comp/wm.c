@@ -598,9 +598,20 @@ static void draw_flyout(Canvas *c) {
 typedef struct { Canvas c; } Band;
 static void compose_band(Canvas *c) {
     g_buf(c, wall->px, SCR_W, SCR_W, SCR_H, 0, 0, SCR_W, SCR_H, 0, 0, 255, 1);
-    // build watermark, bottom right (like an Insider build), doubles as the disclaimer
-    text_r(c, F_REG, 12, 0, SCR_W - 18, SCR_H - 34, 0x99FFFFFF, "Windows 12 · unofficial fan build " W12_VERSION);
-    text_r(c, F_REG, 12, 0, SCR_W - 18, SCR_H - 16, 0x99FFFFFF, "Not affiliated with Microsoft");
+    // FLX OS central desktop watermark (matches reference)
+    icon_logo(c, SCR_W * 0.38f, SCR_H * 0.22f, 72, 210);
+    text_c(c, F_BOLD, 36, 0.5f, SCR_W * 0.38f, SCR_H * 0.22f + 56, 0xE0F2F5F4, "FLX OS");
+    text_c(c, F_REG, 15, 0.2f, SCR_W * 0.38f, SCR_H * 0.22f + 82, 0xD0F5AD32, "Plus qu'un syst\u00e8me. Une vision.");
+    // Bottom-left brand
+    icon_logo(c, 24, SCR_H - 30, 26, 240);
+    text(c, F_BOLD, 14, 0.5f, 44, SCR_H - 32, 0xFFF2F5F4, "FLX OS");
+    text(c, F_REG, 11, 0, 44, SCR_H - 18, 0xFF94A6AA, "Par Florynx Labs");
+    // Bottom-right motto + Mali flag
+    text_r(c, F_REG, 12, 0, SCR_W - 55, SCR_H - 24, 0xFF94A6AA, "Simple. Rapide. Local. \u2022 Mali");
+    g_rect(c, SCR_W - 48, SCR_H - 33, 8, 15, 0xFF14B53A);
+    g_rect(c, SCR_W - 40, SCR_H - 33, 8, 15, 0xFFFCD116);
+    g_rect(c, SCR_W - 32, SCR_H - 33, 8, 15, 0xFFCE1126);
+    g_rrect_line(c, SCR_W - 48, SCR_H - 33, 24, 15, 2, 1, 0x40FFFFFF);
     if (snap_prev) {   // drag-to-edge preview behind the dragged window: tinted blurred wallpaper (no live read)
         float r = snap_prev == 3 ? 0 : 8;
         mica_under(c, spx, spy, spw, sph, r, r, 255);

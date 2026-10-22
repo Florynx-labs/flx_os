@@ -62,17 +62,19 @@ cp /src/third_party/fonts/LICENSE.txt "$R/share/fonts/OFL.txt"
 # procedural wallpapers (generated now, at build time)
 /kbuild/obj/tools/gen_wallpaper "$R/share/wallpapers"
 cat > "$R/etc/os-release" <<OS
-NAME="Windows 12"
-PRETTY_NAME="Windows 12 (unofficial fan project)"
-VERSION="12.0 build $(date +%y%m%d)"
-ID=w12
+NAME="FLX OS"
+PRETTY_NAME="FLX OS 0.1.0 (Dev)"
+VERSION="0.1.0 build $(date +%y%m%d)"
+ID=flx-os
+ID_LIKE=linux
+HOME_URL="https://github.com/Florynx-labs"
 OS
-echo "windows12" > "$R/etc/hostname"
+echo "flx-os" > "$R/etc/hostname"
 # lines of code per component, embedded for proof mode
 sh /src/scripts/loc.sh /src > "$R/share/proof/loc.txt"
 echo "${W12_BUILD_TIME:-$(date '+%Y-%m-%d %H:%M')}" > "$R/share/proof/build.txt"
 # toolkit scan: fails the build if any third-party UI stack is present
-W12_BUILD_TIME="${W12_BUILD_TIME:-}" sh /src/scripts/verify_no_toolkits.sh "$R" > "$R/share/proof/scan.txt" || { cat "$R/share/proof/scan.txt"; echo "[build] TOOLKIT SCAN FAILED"; exit 1; }
+W12_BUILD_TIME="${W12_BUILD_TIME:-}" sh /src/scripts/verify_no_toolkits.sh "$R" > "$R/share/proof/scan.txt" || { cat "$R/share/proof/scan.txt"; echo "[build] FLX OS TOOLKIT SCAN FAILED"; exit 1; }
 cat "$R/share/proof/scan.txt" | head -3
 
 # ---- initramfs ----------------------------------------------------------
@@ -95,4 +97,4 @@ rm -rf "$H"; mkdir -p "$H/user/Documents" "$H/user/Pictures" "$H/user/Desktop" "
 cp -r /src/home-skel/. "$H/user/" 2>/dev/null || true
 rm -f "$OUT/home.img"
 mke2fs -q -t ext2 -L w12home -d "$H" "$OUT/home.img" 64M
-echo "[build] done: $(ls -la $OUT/Image $OUT/initramfs.cpio | awk '{print $5, $9}' | tr '\n' ' ')"
+echo "[build] FLX OS done: $(ls -la $OUT/Image $OUT/initramfs.cpio | awk '{print $5, $9}' | tr '\n' ' ')"

@@ -1,4 +1,4 @@
-// Windows 12 net library: DNS, HTTP/1.1 (+TLS via BearSSL), URLs, inflate. (API from Lumen OS 2, MIT.)
+// FLX OS net library: DNS, HTTP/1.1 (+TLS via BearSSL), URLs, inflate. (API from Lumen OS 2, MIT.)
 // All calls are blocking: run them off the UI thread.
 #pragma once
 #include "w12.h"

@@ -1,10 +1,11 @@
-// Theme palette, app table, and every icon in Windows 12 — all drawn in code, all original.
+// Theme palette, app table, and every icon in FLX OS — all drawn in code, all original.
+// By Florynx Labs. Built on Lumen OS 2 rasteriser.
 #include "w12.h"
 
-// ---- theme --------------------------------------------------------------------------------
-const uint32_t ACCENTS[NACCENT] = { 0xFF1F6FEB, 0xFF7A4FD6, 0xFF038387, 0xFFD13469, 0xFFCA5010, 0xFF2E8B57 };
-const char *ACCENT_NAMES[NACCENT] = { "Glacier", "Violet", "Lagoon", "Rose", "Ember", "Fern" };
-const char *WALL_NAMES[NWALL] = { "Bloom", "Aurora", "Dune" };
+// ---- theme (FLX OS dark palette: near-black surfaces, gold accent, teal highlights) -------
+const uint32_t ACCENTS[NACCENT] = { 0xFFF5AD32, 0xFF35D6C0, 0xFF1F6FEB, 0xFF7A4FD6, 0xFFD13469, 0xFF2E8B57 };
+const char *ACCENT_NAMES[NACCENT] = { "Gold", "Teal", "Glacier", "Violet", "Rose", "Fern" };
+const char *WALL_NAMES[NWALL] = { "Sunset City", "Aurora", "Dune" };
 Theme TH;
 
 void theme_set(int dark, int accent, int wall) {
@@ -12,53 +13,61 @@ void theme_set(int dark, int accent, int wall) {
     t.dark = dark; t.accent_i = (accent % NACCENT + NACCENT) % NACCENT; t.wall = (wall % NWALL + NWALL) % NWALL;
     uint32_t a = ACCENTS[t.accent_i];
     if (dark) {
-        t.accent = c_mix(a, 0xFFFFFFFF, 0.30f); t.accent_fg = 0xFF101010;
-        t.bg = 0xFF202020; t.mica = 0xE0202024; t.surface = 0xFF272727; t.card = 0xFF2D2D2D; t.card2 = 0xFF343434;
-        t.hover = 0x16FFFFFF; t.press = 0x0CFFFFFF; t.line = 0xFF3B3B3B; t.text = 0xFFFFFFFF; t.sub = 0xFFC8C8C8;
-        t.dim = 0xFF8C8C8C; t.sel = c_alpha(t.accent, 0.40f); t.danger = 0xFFFF6B6B;
+        // FLX OS dark: #05090B base, graphite surfaces, gold+teal accents
+        t.accent = a; t.accent_fg = 0xFF05090B;
+        t.bg = 0xFF05090B; t.mica = 0xE00A1114; t.surface = 0xFF0A1114; t.card = 0xFF101A1D; t.card2 = 0xFF152025;
+        t.hover = 0x18FFFFFF; t.press = 0x10FFFFFF; t.line = 0xFF203034; t.text = 0xFFF2F5F4; t.sub = 0xFF94A6AA;
+        t.dim = 0xFF607176; t.sel = c_alpha(t.accent, 0.35f); t.danger = 0xFFFF6B6B;
     } else {
-        t.accent = a; t.accent_fg = 0xFFFFFFFF;
-        t.bg = 0xFFF3F3F3; t.mica = 0xE6F4F4F6; t.surface = 0xFFF9F9F9; t.card = 0xFFFFFFFF; t.card2 = 0xFFF5F5F5;
-        t.hover = 0x0F000000; t.press = 0x08000000; t.line = 0xFFE3E3E3; t.text = 0xFF1A1A1A; t.sub = 0xFF5C5C5C;
-        t.dim = 0xFF8E8E8E; t.sel = c_alpha(a, 0.28f); t.danger = 0xFFC42B1C;
+        // FLX OS light: clean whites, subtle gold accent
+        t.accent = c_mix(a, 0xFF000000, 0.10f); t.accent_fg = 0xFFFFFFFF;
+        t.bg = 0xFFF0F2F3; t.mica = 0xE6F4F5F7; t.surface = 0xFFF8FAFA; t.card = 0xFFFFFFFF; t.card2 = 0xFFF3F5F6;
+        t.hover = 0x0F000000; t.press = 0x08000000; t.line = 0xFFDDE3E5; t.text = 0xFF0D1618; t.sub = 0xFF4A5C61;
+        t.dim = 0xFF7A8E93; t.sel = c_alpha(a, 0.28f); t.danger = 0xFFC42B1C;
     }
-    t.accent_soft = c_alpha(t.accent, 0.16f);
+    t.accent_soft = c_alpha(t.accent, 0.18f);
     TH = t;
 }
 
-// ---- app table --------------------------------------------------------------------------------
+// ---- app table (FLX OS) -----------------------------------------------------------------------
 const AppInfo APPS[NAPPS] = {
-    { "explorer", "File Explorer", "Browse your files" },
-    { "settings", "Settings", "Personalize Windows 12" },
-    { "terminal", "Terminal", "Command line" },
-    { "notepad", "Notepad", "Write and edit text" },
-    { "calc", "Calculator", "Standard calculator" },
-    { "browser", "Browser", "Browse the web" },
-    { "taskmgr", "Task Manager", "Processes and performance" },
-    { "minesweeper", "Minesweeper", "Classic puzzle game" },
-    { "proof", "Proof", "What runs on this PC" },
+    { "explorer", "Fichiers", "Gestionnaire de fichiers" },
+    { "settings", "Param\u00e8tres", "Configuration de FLX OS" },
+    { "terminal", "Terminal", "FLX Terminal" },
+    { "notepad",  "\u00c9diteur de texte", "Code - OSS" },
+    { "calc",     "Calculatrice", "Utilitaires" },
+    { "browser",  "Navigateur Web", "Firefox" },
+    { "taskmgr",  "Gestionnaire de t\u00e2ches", "Processus actifs" },
+    { "minesweeper", "Minesweeper", "Jeu classique" },
+    { "proof",    "Informations syst\u00e8me", "FLX System Info" },
 };
 int app_by_exe(const char *exe) {
     for (int i = 0; i < NAPPS; i++) if (!strcmp(APPS[i].exe, exe)) return i;
     return -1;
 }
 
-// ---- the Windows 12 mark: one glass pane in perspective -------------------------------------------
+// ---- FLX OS logo mark: stylised gold diamond fox-ear shape ------------------------------------
+// A upward-pointing diamond with two angled "wings" — the Florynx mark.
 void icon_logo(Canvas *c, float cx, float cy, float s, int alpha) {
-    float x0 = cx - s / 2, y0 = cy - s / 2;
-    float q[8] = { x0 + 0.16f * s, y0 + 0.20f * s, x0 + 0.86f * s, y0 + 0.04f * s,
-                   x0 + 0.86f * s, y0 + 0.96f * s, x0 + 0.16f * s, y0 + 0.80f * s };
     float A = alpha / 255.0f;
-    // soft glow behind
-    g_poly(c, (float[]){ q[0] - s * .02f, q[1] + s * .06f, q[2], q[3] + s * .08f, q[4], q[5] + s * .04f, q[6] - s * .02f, q[7] + s * .06f }, 4,
-           c_alpha(0xFF2B6CFF, 0.18f * A), c_alpha(0xFF6A3CFF, 0.10f * A), x0, y0, x0 + s, y0 + s);
-    g_poly(c, q, 4, c_alpha(0xFF6FE7FF, A), c_alpha(0xFF1F3FD6, A), x0 + 0.1f * s, y0, x0 + 0.9f * s, y0 + s);
-    // glossy diagonal sheen across the upper half of the pane
-    float sh[8] = { q[0], q[1], q[2], q[3], q[2], q[3] + 0.30f * s, q[0], q[1] + 0.40f * s };
-    g_poly(c, sh, 4, c_alpha(0xFFFFFFFF, 0.38f * A), c_alpha(0xFFFFFFFF, 0.04f * A), x0, y0, x0 + 0.3f * s, y0 + 0.6f * s);
-    // thin bright leading edge on the near (right) side
-    g_poly(c, (float[]){ q[2] - s * 0.035f, q[3] + s * 0.012f, q[2], q[3], q[4], q[5], q[4] - s * 0.035f, q[5] - s * 0.012f }, 4,
-           c_alpha(0xFFE9FCFF, 0.9f * A), c_alpha(0xFF8FB8FF, 0.6f * A), 0, y0, 0, y0 + s);
+    // gold glow halo
+    g_circle(c, cx, cy, s * 0.65f, c_alpha(0x28F5AD32, A));
+    // main diamond body (top + bottom halves with gradient)
+    float h = s * 0.50f, hw = s * 0.30f;
+    // upper half: darker gold at top, bright gold at centre
+    float up[8] = { cx, cy - h, cx + hw, cy - h*0.08f, cx, cy, cx - hw, cy - h*0.08f };
+    g_poly(c, up, 4, c_alpha(0xFFFFC24B, A), c_alpha(0xFFF5AD32, 0.7f*A), cx, cy-h, cx, cy);
+    // lower half: gold to dark amber
+    float dn[8] = { cx - hw, cy - h*0.08f, cx, cy, cx + hw, cy - h*0.08f, cx, cy + h*0.52f };
+    g_poly(c, dn, 4, c_alpha(0xFFF5AD32, A), c_alpha(0xFFB87E1A, 0.9f*A), cx, cy, cx, cy+h*0.52f);
+    // left wing
+    float lw[6] = { cx - hw*0.55f, cy - h*0.55f, cx - hw*1.62f, cy - h*0.10f, cx - hw*0.5f, cy - h*0.05f };
+    g_poly(c, lw, 3, c_alpha(0xFFFFD477, 0.85f*A), c_alpha(0xFFF5AD32, 0.35f*A), cx-hw*1.6f, cy, cx, cy-h);
+    // right wing
+    float rw[6] = { cx + hw*0.55f, cy - h*0.55f, cx + hw*1.62f, cy - h*0.10f, cx + hw*0.5f, cy - h*0.05f };
+    g_poly(c, rw, 3, c_alpha(0xFFFFD477, 0.85f*A), c_alpha(0xFFF5AD32, 0.35f*A), cx, cy-h, cx+hw*1.6f, cy);
+    // bright highlight vein down the centre
+    g_line(c, cx, cy - h, cx, cy + h * 0.28f, fmaxf(1.0f, s * 0.03f), c_alpha(0xFFFFEEBB, 0.60f * A));
 }
 
 void icon_copilot(Canvas *c, float cx, float cy, float s) {

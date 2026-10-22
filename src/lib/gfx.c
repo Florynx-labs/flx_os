@@ -1,6 +1,6 @@
 // Software rasteriser: AA rounded rects (signed distance), lines, arcs, polygons,
 // gradients, soft shadows, frosted glass, buffer/image blits. ARGB8888.
-// Core shapes ported from Lumen OS 2 (MIT); shadow/glass/poly/gradient are new for Windows 12.
+// Core shapes ported from Lumen OS 2 (MIT); shadow/glass/poly/gradient are new for FLX OS.
 #include "w12.h"
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG

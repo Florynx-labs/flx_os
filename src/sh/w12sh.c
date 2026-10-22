@@ -1,4 +1,4 @@
-// w12sh: the Windows 12 shell. Runs on the Terminal's pty. All commands are built in:
+// flxsh: the FLX OS shell. Runs on the Terminal's pty. All commands are built in:
 // ls cd pwd cat echo mkdir rm touch ps kill uname free df ifconfig ping curl clear help
 // proof open date whoami hostname fetch exit. ping uses raw ICMP; curl uses our own
 // HTTP/TLS stack; open asks the compositor to launch an app.
@@ -159,7 +159,7 @@ static void cmd_df(void) {
 static void cmd_ifconfig(void) {
     NetInfo ni;
     if (netinfo_read(&ni)) { p("no network info\n"); return; }
-    p(C_BOLD "%s" C_RESET ": %s\n", ni.ifname, ni.up ? C_GREEN "UP, configured by w12-netd (own DHCP client)" C_RESET : C_RED "DOWN" C_RESET);
+    p(C_BOLD "%s" C_RESET ": %s\n", ni.ifname, ni.up ? C_GREEN "UP, configured by flx-netd (own DHCP client)" C_RESET : C_RED "DOWN" C_RESET);
     p("    inet %s  netmask %s\n    gateway %s  dns %s\n    ether %s\n", ni.ip, ni.mask, ni.gw, ni.dns, ni.mac);
     p(C_BOLD "lo" C_RESET ": UP\n    inet 127.0.0.1  netmask 255.0.0.0\n");
 }
@@ -251,7 +251,7 @@ static void kernel_version(char *o, int n) { struct utsname u; uname(&u); snprin
 
 static void cmd_proof(int argc, char **argv) {
     char kv[128]; kernel_version(kv, sizeof kv);
-    p(C_CYAN C_BOLD "Windows 12 proof" C_RESET "  (unofficial fan project, not affiliated with Microsoft)\n");
+    p(C_CYAN C_BOLD "FLX OS proof" C_RESET "  (logiciel libre, par Florynx Labs)\n");
     p("Kernel: " C_BOLD "%s" C_RESET "\n", kv);
     p(C_YEL "Linux kernel below. Everything above /dev/dri and /dev/input is written from scratch in this repo." C_RESET "\n\n");
     p(C_BOLD "Running processes (/proc):" C_RESET "\n");
@@ -300,22 +300,49 @@ static void cmd_proof(int argc, char **argv) {
 static void cmd_fetch(void) {
     char kv[128]; kernel_version(kv, sizeof kv);
     NetInfo ni; netinfo_read(&ni);
-    char *m = read_file("/proc/meminfo", 0); long tot = m ? atol(strstr(m, "MemTotal:") + 9) : 0; free(m);
+    char *m = read_file("/proc/meminfo", 0);
+    long tot = 0, av = 0;
+    if (m) { char *q; if ((q=strstr(m,"MemTotal:"))) tot=atol(q+9); if ((q=strstr(m,"MemAvailable:"))) av=atol(q+13); free(m); }
     double up = 0; char *u = read_file("/proc/uptime", 0); if (u) { up = atof(u); free(u); }
-    p(C_CYAN C_BOLD "   user@windows12" C_RESET "\n   ---------------\n");
-    p(C_CYAN "   OS" C_RESET "       Windows 12 " W12_VERSION " (unofficial fan project)\n");
-    p(C_CYAN "   Kernel" C_RESET "   %s\n", kv);
-    p(C_CYAN "   Uptime" C_RESET "   %dm %ds\n", (int)(up / 60), (int)fmod(up, 60));
-    p(C_CYAN "   Shell" C_RESET "    w12sh (built in, no busybox)\n");
-    p(C_CYAN "   Display" C_RESET "  1920x1080, DRM/KMS dumb buffers (virtio-gpu)\n");
-    p(C_CYAN "   UI" C_RESET "       w12-compositor + libw12ui (own code)\n");
-    p(C_CYAN "   Font" C_RESET "     Selawik via stb_truetype\n");
-    p(C_CYAN "   Memory" C_RESET "   %ld MB\n", tot / 1024);
-    p(C_CYAN "   Network" C_RESET "  %s %s\n", ni.up ? ni.ip : "down", ni.up ? "(own DHCP)" : "");
+    long used_mb = (tot - av) / 1024, tot_mb = tot / 1024;
+    int upmin = (int)(up / 60);
+    // ascii art: FLX diamond mark
+    p("  " C_YELLOW "   ...:::::....   " C_RESET "\n");
+    p("  " C_YELLOW "  .:        :..  " C_RESET "   " C_BOLD C_CYAN "flx@flx-os" C_RESET "\n");
+    p("  " C_YELLOW " .:  .####.  :.  " C_RESET "   " C_DIM "----------" C_RESET "\n");
+    p("  " C_YELLOW " :  .######.  :  " C_RESET "   " C_CYAN "OS" C_RESET "       FLX OS " W12_VERSION " (Dev)\n");
+    p("  " C_YELLOW " :  ###  ###  :  " C_RESET "   " C_CYAN "Host" C_RESET "     FLX Laptop\n");
+    p("  " C_YELLOW " .:  '####'  :.  " C_RESET "   " C_CYAN "Kernel" C_RESET "   %s\n", kv);
+    p("  " C_YELLOW "  ':.      .:'   " C_RESET "   " C_CYAN "Uptime" C_RESET "   %d mins\n", upmin);
+    p("  " C_YELLOW "           " C_RESET "   " C_CYAN "Packages" C_RESET " 9 (flx-native)
+");
+    p("                   " C_CYAN "Shell" C_RESET "    flxsh " W12_VERSION "
+");
+    p("                   " C_CYAN "Resolution" C_RESET " 1920x1080
+");
+    p("                   " C_CYAN "DE" C_RESET "       FLX Desktop
+");
+    p("                   " C_CYAN "WM" C_RESET "       flx-compositor
+");
+    p("                   " C_CYAN "Theme" C_RESET "    FLX Dark
+");
+    p("                   " C_CYAN "Icons" C_RESET "    FLX Icons
+");
+    p("                   " C_CYAN "CPU" C_RESET "      %s
+", ni.ifname[0] ? "ARM64 (QEMU virt, -accel hvf)" : "ARM64 (QEMU virt)");
+    p("                   " C_CYAN "GPU" C_RESET "      virtio-gpu (DRM/KMS)
+");
+    p("                   " C_CYAN "Memory" C_RESET "   %ldMiB / %ldMiB
+", used_mb, tot_mb);
+    p("
+");
+    p("   [40m   [41m   [42m   [43m   [44m   [45m   [46m   [47m   [0m
+
+");
 }
 
 static void help(void) {
-    p(C_BOLD "w12sh built-in commands" C_RESET "\n");
+    p(C_BOLD "flxsh built-in commands" C_RESET "\n");
     const char *h[][2] = {
         { "ls [-l] [dir]", "list files" }, { "cd [dir]", "change directory" }, { "pwd", "print working directory" },
         { "cat FILE...", "print files" }, { "echo TEXT [> FILE]", "print text (or write a file)" }, { "mkdir DIR", "make a directory" },
@@ -352,7 +379,7 @@ static void run(char *line) {
     int saved = -1;
     if (redir && *redir) {
         int fd = open(redir, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (fd < 0) { p(C_RED "w12sh: %s: %s" C_RESET "\n", redir, strerror(errno)); return; }
+        if (fd < 0) { p(C_RED "flxsh: %s: %s" C_RESET "\n", redir, strerror(errno)); return; }
         fflush(stdout); saved = dup(1); dup2(fd, 1); close(fd);
     }
     const char *c = argv[0];
@@ -401,7 +428,7 @@ static void run(char *line) {
     else if (!strcmp(c, "exit")) { fflush(stdout); exit(0); }
     else if (!strcmp(c, "open") || !strcmp(c, "start")) { if (argc < 2 || open_app(argv[1], argc > 2 ? argv[2] : 0)) p("usage: open APP [ARG]\n"); }
     else if (app_by_exe(c) >= 0) open_app(c, argc > 1 ? argv[1] : 0);
-    else p(C_RED "w12sh: %s: command not found" C_RESET " (try " C_CYAN "help" C_RESET ")\n", c);
+    else p(C_RED "flxsh: %s: command not found" C_RESET " (try " C_CYAN "help" C_RESET ")\n", c);
     fflush(stdout);
     if (saved >= 0) { dup2(saved, 1); close(saved); }
 }
@@ -459,12 +486,12 @@ int main(void) {
     raw = cooked;
     raw.c_lflag &= ~(ICANON | ECHO);
     raw.c_cc[VMIN] = 1; raw.c_cc[VTIME] = 0;
-    p(C_CYAN C_BOLD "Windows 12" C_RESET " Terminal · w12sh " W12_VERSION "\n");
+    p(C_CYAN C_BOLD "FLX OS" C_RESET " Terminal · flxsh " W12_VERSION "\n");
     p(C_DIM "Type 'help' for commands, 'proof' to see what this OS is made of. Up/Down recall history." C_RESET "\n\n");
     char line[2048];
     for (;;) {
         char cwd[512], prompt[700]; pretty_cwd(cwd, sizeof cwd);
-        snprintf(prompt, sizeof prompt, C_GREEN "user@windows12" C_RESET " " C_BLUE "%s" C_RESET " > ", cwd);
+        snprintf(prompt, sizeof prompt, C_GREEN "user@flx-os" C_RESET " " C_BLUE "%s" C_RESET " > ", cwd);
         p("%s", prompt);
         fflush(stdout);
         if (tty) tcsetattr(0, TCSANOW, &raw);

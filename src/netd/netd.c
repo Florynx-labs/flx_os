@@ -1,4 +1,4 @@
-// w12-netd: brings the network up with our own DHCP client (raw AF_PACKET frames,
+// flx-netd: brings the network up with our own DHCP client (raw AF_PACKET frames,
 // hand-built Ethernet/IPv4/UDP/BOOTP) and rtnetlink, then publishes the result in
 // /run/net.conf for the shell, Settings, Terminal and Task Manager.
 // DHCP + rtnetlink code ported from Lumen OS 2 (MIT).

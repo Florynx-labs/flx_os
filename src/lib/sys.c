@@ -1,4 +1,4 @@
-// Small utilities shared by every Windows 12 program (from Lumen OS 2, MIT).
+// Small utilities shared by every FLX OS program (from Lumen OS 2, MIT).
 #include "w12.h"
 #include <sys/stat.h>
 #include <unistd.h>

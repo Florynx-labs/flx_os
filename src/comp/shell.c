@@ -1,6 +1,6 @@
-// The Windows 12 shell surfaces drawn by the compositor: boot animation, lock screen,
-// floating glass taskbar, top status bar, Start menu (search, pinned, recommended, power)
-// and the Alt+Tab switcher. Settings (theme/accent/wallpaper) persist on the home disk.
+// FLX OS shell surfaces drawn by the compositor: boot animation, lock screen,
+// floating glass taskbar, top status bar, Start/Launcher menu, Quick Settings panel
+// and the Alt+Tab switcher. Settings persist on the home disk.
 #include "comp.h"
 #include <unistd.h>
 
@@ -25,7 +25,7 @@ static double tip_t; static int tip_id = -1;
 #define SM_H 700
 #define SM_X ((SCR_W - SM_W) / 2)
 #define SM_Y (TBY - 12 - SM_H)
-static const char *PINNED[] = { "explorer", "browser", "terminal", "notepad", "settings", "taskmgr", "calc", "minesweeper" };
+static const char *PINNED[] = { "explorer", "browser", "terminal", "settings", "taskmgr", "calc", "minesweeper", "proof" };
 #define NPIN 8
 enum {
     H_NONE, H_START_BTN, H_SEARCH_BTN, H_WIDGETS_BTN, H_COPILOT_BTN, H_TOP_SEARCH, H_NET, H_CLOCK, H_VOL,
@@ -47,13 +47,14 @@ int hit_at(float x, float y) {
 // ---- settings & recent files ------------------------------------------------------------------------
 void settings_save(void) {
     char *s = strfmt("dark=%d\naccent=%d\nwall=%d\n", TH.dark, TH.accent_i, TH.wall);
-    write_file("/home/.config/w12.conf", s, strlen(s));
+    write_file("/home/.config/flx.conf", s, strlen(s));
     free(s);
     sync();
 }
 static void settings_load(void) {
-    int d = 0, a = 0, w = 0;
-    char *s = read_file("/home/.config/w12.conf", 0);
+    int d = 1, a = 0, w = 0;  // FLX OS defaults: dark mode, gold accent, sunset city
+    char *s = read_file("/home/.config/flx.conf", 0);
+    if (!s) s = read_file("/home/.config/w12.conf", 0);  // backward compat
     if (s) { char *p; if ((p = strstr(s, "dark="))) d = atoi(p + 5); if ((p = strstr(s, "accent="))) a = atoi(p + 7); if ((p = strstr(s, "wall="))) w = atoi(p + 5); free(s); }
     theme_set(d, a, w);
 }
@@ -165,10 +166,10 @@ static void glass_panel(Canvas *c, float x, float y, float w, float h, float r, 
 static void clock_strings(char *hm, int n1, char *date, int n2, char *dshort, int n3) {
     time_t tt = time(0);
     struct tm tm; localtime_r(&tt, &tm);
-    static const char *DAYS[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
-    static const char *MON[] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
+    static const char *DAYS[] = { "Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam" };
+    static const char *MON[]  = { "Janv.", "F\u00e9vr.", "Mars", "Avr.", "Mai", "Juin", "Juil.", "Ao\u00fbt", "Sept.", "Oct.", "Nov.", "D\u00e9c." };
     if (hm) snprintf(hm, n1, "%d:%02d", tm.tm_hour, tm.tm_min);
-    if (date) snprintf(date, n2, "%s, %d %s", DAYS[tm.tm_wday], tm.tm_mday, MON[tm.tm_mon]);
+    if (date) snprintf(date, n2, "%s %d %s %d", DAYS[tm.tm_wday], tm.tm_mday, MON[tm.tm_mon], tm.tm_year + 1900);
     if (dshort) snprintf(dshort, n3, "%d/%d/%d", tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900);
 }
 
@@ -188,7 +189,7 @@ static void draw_boot(Canvas *c, float alpha) {
         float a = clampf(fminf(p, 1 - p) * 12, 0, 1) * alpha;
         g_circle(c, cx + R * cosf(ang), cy + R * sinf(ang), 4.2f, c_alpha(0xFFFFFFFF, a));
     }
-    text_c(c, F_SEMILIGHT, 14, 0, SCR_W / 2, SCR_H - 48, c_alpha(0xFF8A8A8A, la), "Windows 12  ·  unofficial fan project, not affiliated with Microsoft");
+    text_c(c, F_SEMILIGHT, 14, 0, SCR_W / 2, SCR_H - 48, c_alpha(0xFF8A8A8A, la), "FLX OS  ·  logiciel libre, par Florynx Labs");
 }
 
 // ---- lock ------------------------------------------------------------------------------------------
@@ -227,27 +228,21 @@ static void draw_lock(Canvas *c) {
 // ---- top bar -----------------------------------------------------------------------------------------
 static void draw_topbar(Canvas *c) {
     g_glass(c, 0, 0, SCR_W, TOP, 0, glass_tint());
-    g_rect(c, 0, TOP - 1, SCR_W, 1, TH.dark ? 0x30FFFFFF : 0x30FFFFFF);
+    g_rect(c, 0, TOP - 1, SCR_W, 1, TH.dark ? 0x20FFFFFF : 0x20000000);
     uint32_t fg = TH.text;
-    // left: widgets + weather
-    hit_add(H_WIDGETS_BTN, 6, 3, 210, 30);
-    if (hover_id == H_WIDGETS_BTN || widgets_open) g_rrect(c, 6, 3, 210, 30, 6, 6, TH.hover);
-    icon_glyph(c, G_WIDGETS, 26, 18, 18, TH.accent);
-    if (weather.ok) {
-        icon_glyph(c, weather_glyph(weather.code), 54, 18, 18, fg);
-        char tb[16];
-        snprintf(tb, sizeof tb, "%.0f°C", weather.temp);
-        float tx = label(c, F_SEMI, 14, 70, 3, 30, fg, tb);
-        label(c, F_REG, 13, tx + 8, 3, 30, TH.sub, weather.cond);
-    } else label(c, F_REG, 13, 46, 3, 30, TH.sub, "Widgets");
+    // left: FLX OS logo + name (clicking opens widgets panel)
+    hit_add(H_WIDGETS_BTN, 6, 3, 150, 30);
+    if (hover_id == H_WIDGETS_BTN || widgets_open) g_rrect(c, 6, 3, 150, 30, 6, 6, TH.hover);
+    icon_logo(c, 24, TOP / 2, 20, 255);
+    text(c, F_SEMI, 13, 0.5f, 38, TOP / 2 + 5, TH.accent, "FLX OS");
     // centre: search
-    float sw = 420, sx = (SCR_W - sw) / 2;
+    float sw = 400, sx = (SCR_W - sw) / 2;
     hit_add(H_TOP_SEARCH, sx, 4, sw, 28);
-    g_rrect(c, sx, 4, sw, 28, 14, 14, hover_id == H_TOP_SEARCH ? (TH.dark ? 0x40FFFFFF : 0xB0FFFFFF) : (TH.dark ? 0x28FFFFFF : 0x80FFFFFF));
-    g_rrect_line(c, sx, 4, sw, 28, 14, 1, TH.dark ? 0x20FFFFFF : 0x18000000);
+    g_rrect(c, sx, 4, sw, 28, 14, 14, hover_id == H_TOP_SEARCH ? (TH.dark ? 0x30FFFFFF : 0xB0FFFFFF) : (TH.dark ? 0x18FFFFFF : 0x70FFFFFF));
+    g_rrect_line(c, sx, 4, sw, 28, 14, 1, TH.dark ? 0x18FFFFFF : 0x14000000);
     icon_glyph(c, G_SEARCH, sx + 20, 18, 14, TH.sub);
-    label(c, F_REG, 13, sx + 36, 4, 28, TH.sub, "Search apps, files and settings");
-    // right: network, volume, battery, clock, copilot
+    label(c, F_REG, 13, sx + 36, 4, 28, TH.sub, "Rechercher...");
+    // right: network, battery, clock, copilot
     NetInfo ni; netinfo_read(&ni);
     float rx = SCR_W - 10;
     rx -= 40; hit_add(H_COPILOT_BTN, rx, 3, 34, 30);
@@ -360,13 +355,13 @@ static void draw_start(Canvas *c) {
         float tw = text(c, F_REG, 16, 0, fx + 44, fy + 26, fg, query);
         g_rect(c, tw + 2, fy + 10, 1.5f, 20, TH.accent);
     } else {
-        text(c, F_REG, 16, 0, fx + 44, fy + 26, sub, "Search for apps, settings and documents");
+        text(c, F_REG, 16, 0, fx + 44, fy + 26, sub, "Rechercher une application, un fichier, une commande\u2026");
         g_rect(c, fx + 43, fy + 10, 1.5f, 20, c_alpha(TH.accent, (fmod(now(), 1.0) < 0.55) ? a : 0));
     }
     if (query[0]) {
         int r[16];
         int n = results(r);
-        text(c, F_SEMI, 15, 0, x + 40, y + 108, fg, n ? "Best match" : "No results");
+        text(c, F_SEMI, 15, 0, x + 40, y + 108, fg, n ? "Meilleur résultat" : "Aucun résultat");
         for (int i = 0; i < n && i < 8; i++) {
             float ry = y + 124 + i * 60;
             int id = H_RESULT + i;
@@ -375,7 +370,7 @@ static void draw_start(Canvas *c) {
             if (r[i] < 1000) {
                 icon_app(c, r[i], x + 44, ry + 10, 36);
                 text(c, F_SEMI, 15, 0, x + 96, ry + 25, fg, APPS[r[i]].title);
-                text(c, F_REG, 13, 0, x + 96, ry + 44, sub, i == 0 ? "App · press Enter to open" : "App");
+                text(c, F_REG, 13, 0, x + 96, ry + 44, sub, i == 0 ? "Application · Entrée pour ouvrir" : "App");
             } else {
                 const char *pth = recent[r[i] - 1000], *b = strrchr(pth, '/');
                 icon_file(c, b ? b + 1 : pth, x + 44, ry + 10, 36);
@@ -447,8 +442,8 @@ static void draw_start(Canvas *c) {
     hit_add(H_USER, x + 24, by + 12, 180, 44);
     if (hover_id == H_USER) g_rrect(c, x + 24, by + 12, 180, 44, 8, 8, TH.hover);
     g_circle(c, x + 52, by + 34, 16, TH.accent);
-    text_c(c, F_SEMI, 15, 0, x + 52, by + 40, TH.accent_fg, "U");
-    text(c, F_SEMI, 14, 0, x + 78, by + 39, fg, "User");
+    text_c(c, F_SEMI, 15, 0, x + 52, by + 40, TH.accent_fg, "F");
+    text(c, F_SEMI, 14, 0, x + 78, by + 39, fg, "FLX User");
     hit_add(H_POWER, x + SM_W - 72, by + 12, 44, 44);
     if (hover_id == H_POWER || power_menu) g_rrect(c, x + SM_W - 72, by + 12, 44, 44, 8, 8, TH.hover);
     icon_glyph(c, G_POWER, x + SM_W - 50, by + 34, 20, fg);

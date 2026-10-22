@@ -13,7 +13,7 @@
 
 extern const br_x509_trust_anchor *w12_tas;
 extern const size_t w12_tas_num;
-#define UA "Mozilla/5.0 (Windows 12; ARM64) W12Browser/1.0"
+#define UA "Mozilla/5.0 (FLX OS; ARM64) FLXBrowser/1.0"
 
 // ---- URLs ------------------------------------------------------------------------------------
 int url_parse(const char *s, Url *u) {

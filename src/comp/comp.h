@@ -1,4 +1,4 @@
-// w12-compositor: owns DRM/KMS and evdev, composites app windows, draws the shell.
+// flx-compositor: owns DRM/KMS and evdev, composites app windows, draws the shell.
 #pragma once
 #include "w12.h"
 #include "../net/net.h"

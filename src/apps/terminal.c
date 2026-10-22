@@ -1,4 +1,4 @@
-// Terminal: our own terminal emulator. Runs /bin/w12sh on a pseudo-terminal, parses the
+// Terminal: our own terminal emulator. Runs /bin/flxsh on a pseudo-terminal, parses the
 // output (UTF-8, CR/LF/BS/TAB, CSI cursor moves, erase, SGR colours) into a cell grid with
 // scrollback, and draws it in fixed-width cells with Selawik.
 #include "w12.h"
@@ -116,12 +116,13 @@ static void send_str(const char *s) { if (mfd >= 0) write(mfd, s, strlen(s)); }
 
 static void draw(Canvas *c) {
     resize_pty();
-    g_rect(c, 0, 0, U.w, U.h, 0xFF0C0C0C);
-    // tab strip, Windows Terminal style
-    g_rect(c, 0, 0, U.w, TABH, 0xFF1B1B1B);
-    g_rrect(c, 10, 6, 200, TABH - 6, 7, 0, 0xFF0C0C0C);
+    g_rect(c, 0, 0, U.w, U.h, 0xFF060A0C);
+    // tab strip - FLX OS Terminal
+    g_rect(c, 0, 0, U.w, TABH, 0xFF0A1114);
+    g_rrect(c, 10, 6, 200, TABH - 6, 7, 0, 0xFF060A0C);
+    g_rrect_line(c, 10, 6, 200, TABH - 6, 7, 1, 0x28F5AD32);
     icon_app(c, APP_TERMINAL, 20, 13, 18);
-    text(c, F_REG, 13, 0, 46, 28, 0xFFF2F2F2, "w12sh");
+    text(c, F_REG, 13, 0, 46, 28, 0xFFF2F5F4, "flx@flx-os");
     icon_glyph(c, G_CLOSE, 192, 22, 9, 0xFF9A9A9A);
     icon_glyph(c, G_PLUS, 232, 22, 12, 0xFF9A9A9A);
     if (ui_click(220, 6, 26, 28)) app_launch("terminal", 0);
@@ -165,7 +166,7 @@ static void draw(Canvas *c) {
     }
 }
 
-static AppDef A = { .exe = "terminal", .title = "Terminal", .w = 960, .h = 600, .draw = draw, .on_fd = on_fd };
+static AppDef A = { .exe = "terminal", .title = "FLX Terminal", .w = 960, .h = 600, .draw = draw, .on_fd = on_fd };
 
 static void init(int argc, char **argv) {
     (void)argc; (void)argv;
@@ -188,7 +189,7 @@ static void init(int argc, char **argv) {
         if (s > 2) close(s);
         signal(SIGPIPE, SIG_DFL);
         setenv("TERM", "xterm-256color", 1);
-        execl("/bin/w12sh", "w12sh", (char *)0);
+        execl("/bin/flxsh", "flxsh", (char *)0);
         _exit(127);
     }
     A.extra_fd = mfd;

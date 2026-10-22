@@ -1,4 +1,4 @@
-# Windows 12 userland. Everything here is our own code; links statically against musl.
+# FLX OS userland. Everything here is our own code; links statically against musl.
 # Called by docker/build-inside.sh with O= (object dir) KINC= (kernel headers) GEN= BEAR=
 O ?= /kbuild/obj
 CC = gcc
@@ -12,7 +12,7 @@ COMPC = $(patsubst %.c,$(O)/%.o,$(wildcard comp/*.c))
 APPS = $(patsubst apps/%.c,%,$(wildcard apps/*.c))
 LIBS = $(O)/libweb.a $(O)/libnet.a $(O)/libw12.a $(BEAR)/build/libbearssl.a -lm
 
-all: $(O)/bin/init $(O)/bin/w12-netd $(O)/bin/w12-compositor $(O)/bin/w12sh $(addprefix $(O)/bin/,$(APPS)) $(O)/tools/gen_wallpaper
+all: $(O)/bin/init $(O)/bin/flx-netd $(O)/bin/flx-compositor $(O)/bin/flxsh $(addprefix $(O)/bin/,$(APPS)) $(O)/tools/gen_wallpaper
 
 $(O)/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -28,11 +28,11 @@ $(O)/libweb.a: $(WEBC)
 
 $(O)/bin/init: $(O)/init/init.o
 	@mkdir -p $(dir $@); $(CC) $(LDFLAGS) -o $@ $^
-$(O)/bin/w12-netd: $(O)/netd/netd.o $(O)/libw12.a
+$(O)/bin/flx-netd: $(O)/netd/netd.o $(O)/libw12.a
 	@mkdir -p $(dir $@); $(CC) $(LDFLAGS) -o $@ $^ -lm
-$(O)/bin/w12-compositor: $(COMPC) $(LIBS:-lm=) 
+$(O)/bin/flx-compositor: $(COMPC) $(LIBS:-lm=) 
 	@mkdir -p $(dir $@); $(CC) $(LDFLAGS) -o $@ $(COMPC) $(LIBS)
-$(O)/bin/w12sh: $(O)/sh/w12sh.o $(LIBS:-lm=)
+$(O)/bin/flxsh: $(O)/sh/w12sh.o $(LIBS:-lm=)
 	@mkdir -p $(dir $@); $(CC) $(LDFLAGS) -o $@ $< $(LIBS)
 $(O)/bin/%: $(O)/apps/%.o $(LIBS:-lm=)
 	@mkdir -p $(dir $@); $(CC) $(LDFLAGS) -o $@ $< $(LIBS)

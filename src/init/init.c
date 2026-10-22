@@ -1,5 +1,5 @@
-// Windows 12 PID 1. Mounts the virtual filesystems and the persistent home disk,
-// starts w12-netd and w12-compositor, reaps orphans, restarts the compositor if it
+// FLX OS PID 1. Mounts the virtual filesystems and the persistent home disk,
+// starts flx-netd and flx-compositor, reaps orphans, restarts the compositor if it
 // crashes, and performs shutdown/restart when the compositor asks (exit code 42/43).
 #define _GNU_SOURCE
 #include <errno.h>
@@ -67,7 +67,7 @@ int main(void) {
     int fd = open("/dev/console", O_RDWR);
     if (fd >= 0) { dup2(fd, 0); dup2(fd, 1); dup2(fd, 2); if (fd > 2) close(fd); }
     say("W12:BOOT init");
-    sethostname("windows12", 9);
+    sethostname("flx-os", 9);
     // persistent home disk (virtio-blk, ext2); fall back to RAM if missing
     int ok = -1;
     for (int i = 0; i < 40 && ok; i++) {
@@ -79,8 +79,8 @@ int main(void) {
     mkdir("/home/user", 0755);
     mkdir("/home/.config", 0755);
     signal(SIGINT, SIG_IGN);
-    pid_t net = spawn("/bin/w12-netd");
-    pid_t comp = spawn("/bin/w12-compositor");
+    pid_t net = spawn("/bin/flx-netd");
+    pid_t comp = spawn("/bin/flx-compositor");
     int crashes = 0;
     for (;;) {
         int st;
@@ -91,11 +91,11 @@ int main(void) {
             if (WIFEXITED(st) && WEXITSTATUS(st) == EXIT_SHUTDOWN) power(0);
             say("W12:ERROR compositor exited (status %d), restarting", st);
             if (++crashes > 5) sleep(2);
-            comp = spawn("/bin/w12-compositor");
+            comp = spawn("/bin/flx-compositor");
         } else if (p == net) {
             say("init: netd exited (%d), restarting", st);
             sleep(1);
-            net = spawn("/bin/w12-netd");
+            net = spawn("/bin/flx-netd");
         }
     }
 }

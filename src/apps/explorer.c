@@ -94,7 +94,7 @@ static int rm_rf(const char *path) {
 static void new_folder(void) {
     char p[1400];
     for (int k = 1; k < 100; k++) {
-        snprintf(fieldbuf, sizeof fieldbuf, k == 1 ? "New folder" : "New folder (%d)", k);
+        snprintf(fieldbuf, sizeof fieldbuf, k == 1 ? "Nouveau dossier" : "New folder (%d)", k);
         snprintf(p, sizeof p, "%s/%s", cwd, fieldbuf);
         if (mkdir(p, 0755) == 0) break;
     }
@@ -115,10 +115,10 @@ static void draw_modal(Canvas *c) {
     if (sel < 0 || sel >= nents) { modal = 0; return; }
     char p[1400]; path_of(sel, p, sizeof p);
     if (modal == 1) {
-        text(c, F_SEMI, 20, 0, x + 24, y + 42, TH.text, "Rename");
+        text(c, F_SEMI, 20, 0, x + 24, y + 42, TH.text, "Renommer");
         U.focus = 5;
         int r = ui_field(5, fieldbuf, sizeof fieldbuf, x + 24, y + 64, w - 48, 36, "Name");
-        bool ok = ui_button(x + w - 252, y + h - 50, 110, 34, "Rename", B_ACCENT) || r == 1;
+        bool ok = ui_button(x + w - 252, y + h - 50, 110, 34, "Renommer", B_ACCENT) || r == 1;
         if (ui_button(x + w - 132, y + h - 50, 110, 34, "Cancel", B_STD) || ui_key(K_ESC, 0)) modal = 0;
         if (ok && fieldbuf[0] && !strchr(fieldbuf, '/')) {
             char np[1400]; snprintf(np, sizeof np, "%s/%s", cwd, fieldbuf);
@@ -134,8 +134,8 @@ static void draw_modal(Canvas *c) {
         text(c, F_SEMI, 20, 0, x + 24, y + 42, TH.text, ents[sel].dir ? "Delete folder" : "Delete file");
         char q[400]; snprintf(q, sizeof q, "Permanently delete \"%s\"?", ents[sel].name);
         text(c, F_REG, 15, 0, x + 24, y + 84, TH.text, q);
-        text(c, F_REG, 13, 0, x + 24, y + 108, TH.sub, "There is no Recycle Bin in Windows 12 (yet).");
-        if (ui_button(x + w - 252, y + h - 50, 110, 34, "Delete", B_ACCENT) || ui_key(K_ENTER, 0)) {
+        text(c, F_REG, 13, 0, x + 24, y + 108, TH.sub, "La corbeille n'est pas encore implementee.");
+        if (ui_button(x + w - 252, y + h - 50, 110, 34, "Supprimer", B_ACCENT) || ui_key(K_ENTER, 0)) {
             if (rm_rf(p)) snprintf(status, sizeof status, "Delete failed: %s", strerror(errno));
             else MARK("EXPLORER delete %s", p);
             sync();
@@ -160,7 +160,7 @@ static void draw(Canvas *c) {
     if (ui_icon_btn(x, 8, 36, 32, G_REFRESH, 0)) load();
     x += 50;
     g_rect(c, x - 6, 14, 1, 20, TH.line);
-    struct { const char *l; int g; } acts[] = { { "New folder", G_PLUS }, { "Rename", G_EDIT }, { "Delete", G_TRASH } };
+    struct { const char *l; int g; } acts[] = { { "Nouveau dossier", G_PLUS }, { "Renommer", G_EDIT }, { "Supprimer", G_TRASH } };
     for (int i = 0; i < 3; i++) {
         float w = text_w(F_REG, 14, 0, acts[i].l) + 44;
         bool en = i == 0 || sel >= 0;
@@ -208,8 +208,8 @@ static void draw(Canvas *c) {
     // navigation pane
     float top = TOOLH + CRUMBH, ph = H - top - STATH;
     struct { const char *l, *p; int folder; } nav[] = {
-        { "Home", "/home/user", 0 }, { "Desktop", "/home/user/Desktop", 1 }, { "Documents", "/home/user/Documents", 1 },
-        { "Downloads", "/home/user/Downloads", 1 }, { "Pictures", "/home/user/Pictures", 1 }, { "Music", "/home/user/Music", 1 },
+        { "Dossier personnel", "/home/user", 0 }, { "Bureau", "/home/user/Desktop", 1 }, { "Documents", "/home/user/Documents", 1 },
+        { "Telechargements", "/home/user/Downloads", 1 }, { "Images", "/home/user/Pictures", 1 }, { "Musique", "/home/user/Music", 1 },
         { "This PC", "/", 2 }, { "System (/bin)", "/bin", 1 } };
     for (int i = 0; i < 8; i++) {
         float ny = top + 8 + i * 38 + (i >= 6 ? 14 : 0);
@@ -304,7 +304,7 @@ static void draw(Canvas *c) {
     text(c, F_REG, 13, 0, 16, H - 9, TH.sub, st);
     // context menu
     if (ctx_open && !modal) {
-        const char *L[] = { "Open", "Rename", "Delete", "New folder" };
+        const char *L[] = { "Ouvrir", "Renommer", "Supprimer", "Nouveau dossier" };
         int G[] = { G_FILE, G_EDIT, G_TRASH, G_PLUS };
         int first = ctx_item < 0 ? 3 : 0;
         float mw = 190, mh = (4 - first) * 36 + 8, mx = fminf(ctx_x, W - mw - 8), my = fminf(ctx_y, H - mh - 8);
@@ -335,6 +335,6 @@ static void init(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-    static AppDef a = { .exe = "explorer", .title = "File Explorer", .w = 1100, .h = 660, .mica = 1, .init = init, .draw = draw };
+    static AppDef a = { .exe = "explorer", .title = "Fichiers", .w = 1100, .h = 660, .mica = 1, .init = init, .draw = draw };
     return app_main(&a, argc, argv);
 }

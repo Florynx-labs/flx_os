@@ -147,7 +147,7 @@ static void draw_processes(Canvas *c, float x, float y, float w, float h) {
         if (g != group) {
             group = g;
             char gt[64];
-            snprintf(gt, sizeof gt, "%s (%d)", g == 0 ? "Apps" : g == 1 ? "Windows 12 processes" : "Kernel threads", g == 0 ? napps : g == 1 ? nbg : nk);
+            snprintf(gt, sizeof gt, "%s (%d)", g == 0 ? "Apps" : g == 1 ? "FLX OS processes" : "Kernel threads", g == 0 ? napps : g == 1 ? nbg : nk);
             ry += 6;
             if (g == 2) {
                 icon_glyph(c, show_k ? G_CHEV_D : G_CHEV_R, x + 18, ry + 14, 12, TH.sub);

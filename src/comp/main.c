@@ -1,4 +1,4 @@
-// w12-compositor main loop: one process owns the display (DRM/KMS dumb buffers, page
+// flx-compositor main loop: one process owns the display (DRM/KMS dumb buffers, page
 // flips) and input (evdev). It composites app windows from shared memory, draws the
 // shell on top, then a software cursor, at up to 60 fps and only when something changed.
 #include "comp.h"
@@ -61,7 +61,7 @@ static int listen_sock(void) {
 
 int main(void) {
     signal(SIGPIPE, SIG_IGN);
-    LOG("comp: Windows 12 compositor starting");
+    LOG("comp: FLX OS compositor starting");
     Canvas *scr = drm_init();
     if (!scr) { MARK("ERROR no display"); sleep(3); return 1; }
     scene = canvas_new(SCR_W, SCR_H);

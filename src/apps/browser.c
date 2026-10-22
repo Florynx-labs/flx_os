@@ -1,4 +1,4 @@
-// Browser: the Lumen OS 2 HTML/CSS engine (MIT) in a Windows 12 window. One worker thread
+// Browser: the Lumen OS 2 HTML/CSS engine (MIT) in a FLX OS window. One worker thread
 // fetches (our HTTP/TLS), parses, styles and lays out pages; image loaders decode off the
 // UI thread; the UI paints the published display list. No JavaScript.
 #include "../web/web.h"
@@ -20,7 +20,7 @@ typedef struct Tab {
 } Tab;
 #define MAXTAB 1
 // mobile-class UA: sites then send their simple layouts, which suit this engine best (Lumen OS 2 was a phone)
-#define BROWSER_UA "Mozilla/5.0 (Linux; Windows 12; Mobile) W12Browser/1.0"
+#define BROWSER_UA "Mozilla/5.0 (Linux; FLX OS; Mobile) FLXBrowser/1.0"
 static Tab *tabs[1];
 static int ntab, cur;
 static volatile int page_w = 1100;
@@ -351,7 +351,7 @@ static void submit_form(Tab *t, Node *from) {
     t->focus = 0;
 }
 
-// ---- Windows 12 browser chrome ---------------------------------------------------------------------
+// ---- FLX OS browser chrome ---------------------------------------------------------------------
 #define TABBAR 40
 #define TOOLBAR 48
 #define TOP (TABBAR + TOOLBAR)

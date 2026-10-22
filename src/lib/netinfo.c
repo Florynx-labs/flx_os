@@ -1,4 +1,4 @@
-// Reads /run/net.conf, the network state published by w12-netd.
+// Reads /run/net.conf, the network state published by flx-netd.
 #include "w12.h"
 
 int netinfo_read(NetInfo *ni) {

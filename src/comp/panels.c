@@ -1,4 +1,4 @@
-// Side panels drawn by the compositor: the Widgets board (left) and Copilot (right).
+// FLX OS side panels: the Widgets board (left) and Copilot/AI assistant (right).
 // Copilot talks plain HTTP to the bridge on the Mac (10.0.2.2:8766) with our own HTTP
 // client, streams NDJSON tokens, parses them with our own JSON parser.
 #include "comp.h"
@@ -43,7 +43,7 @@ static void make_art(void) {   // procedural "photo" for the photo widget
 
 void panels_init(void) {
     char *n = read_file("/home/.config/notes.txt", 0);
-    snprintf(notes, sizeof notes, "%s", n ? n : "Buy milk\nRecord the Windows 12 video\n");
+    snprintf(notes, sizeof notes, "%s", n ? n : "Buy milk\nRecord the FLX OS video\n");
     free(n);
     make_art();
 }
@@ -176,7 +176,7 @@ static char cinput[1024];
 int copilot_busy;
 static pthread_mutex_t cmu = PTHREAD_MUTEX_INITIALIZER;
 static float cscroll; static int stick_bottom = 1;
-static const char *CHIPS[3] = { "What makes Windows 12 different?", "Write a haiku about a glass taskbar", "How does this OS boot?" };
+static const char *CHIPS[3] = { "What makes FLX OS different?", "Write a haiku about a glass taskbar", "How does this OS boot?" };
 
 static void append(Bubble *b, const char *s) {
     size_t a = b->text ? strlen(b->text) : 0, n = strlen(s);
