@@ -20,8 +20,9 @@
 #define SCR_H 1080
 #define W12_VERSION "0.1.0"
 #define W12_NAME "FLX OS"
-#define W12_TAGLINE "Plus qu'un système. Une vision."
-#define W12_SOCK "/run/w12.sock"
+#define W12_TAGLINE "Plus qu'un syst\u00e8me. Une vision."
+#define W12_SOCK "/run/flx.sock"
+#define FLX_SOCK  W12_SOCK   /* preferred alias */
 
 static inline float clampf(float v, float a, float b) { return v < a ? a : v > b ? b : v; }
 static inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }

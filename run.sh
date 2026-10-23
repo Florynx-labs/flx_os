@@ -1,45 +1,80 @@
 #!/bin/sh
-# Windows 12: build (if needed), start the Copilot bridge on the Mac, boot QEMU.
-# QEMU flags start from Lumen OS 2's working set (virt + hvf + virtio-gpu/tablet/keyboard/net/blk).
-#   W12_DISPLAY=cocoa (default) | vnc | none     W12_NO_BRIDGE=1     W12_DISK=path.img
+# FLX OS — boot script.
+# Builds if needed, then launches QEMU.
+# Supports x86_64 (native KVM) and arm64 (emulated TCG or native KVM on ARM hosts).
+#
+# Environment variables:
+#   FLX_ARCH=x86_64|arm64   force target architecture (auto-detected by default)
+#   FLX_DISPLAY=gtk|sdl|vnc|none|cocoa  (default: gtk on Linux, cocoa on macOS)
+#   FLX_NO_BRIDGE=1          disable the Copilot bridge
+#   FLX_DISK=path.img        use a custom persistent disk image
+#   FLX_QMP=/tmp/flx-qmp.sock  (fixed path used by test harness)
 set -e
 cd "$(dirname "$0")"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 mkdir -p build data
 
-# 1. build if needed
-if [ ! -f build/Image ] || [ ! -f build/initramfs.cpio ] || [ ! -f build/home.img ] || \
-   [ -n "$(find src kernel docker third_party tools scripts -type f -newer build/initramfs.cpio | head -1)" ]; then
+HOST_ARCH="$(uname -m)"
+case "${FLX_ARCH:-$HOST_ARCH}" in
+  x86_64|amd64)  TARGET="x86_64" ;;
+  aarch64|arm64) TARGET="arm64" ;;
+  *) echo "Unsupported arch: ${FLX_ARCH:-$HOST_ARCH}"; exit 1 ;;
+esac
+export FLX_ARCH="$TARGET"
+
+# 1. Build if needed (check by image presence + source freshness)
+KERNEL_IMG="build/Image"
+[ "$TARGET" = "x86_64" ] && KERNEL_IMG="build/bzImage"
+if [ ! -f "$KERNEL_IMG" ] || [ ! -f build/initramfs.cpio ] || [ ! -f build/home.img ] || \
+   [ -n "$(find src kernel docker third_party tools scripts assets -type f -newer build/initramfs.cpio | head -1)" ]; then
   ./build.sh
 fi
 
-# 2. persistent disk (ext2 /home), created from the template on first run
-DISK="${W12_DISK:-data/disk.img}"
+# 2. Persistent ext2 /home disk (created from template on first run)
+DISK="${FLX_DISK:-data/disk.img}"
 [ -f "$DISK" ] || { echo "Creating $DISK"; cp build/home.img "$DISK"; }
 
-# 3. Copilot bridge (127.0.0.1 only; the guest reaches it as 10.0.2.2:8766)
+# 3. Copilot/AI bridge (127.0.0.1; guest reaches it as 10.0.2.2:8766)
 BRIDGE=""
-if [ -z "$W12_NO_BRIDGE" ]; then
+if [ -z "$FLX_NO_BRIDGE" ]; then
   python3 bridge/copilot_bridge > build/bridge.log 2>&1 &
   BRIDGE=$!
 fi
-QMP=/tmp/w12-qmp.sock
+QMP="${FLX_QMP:-/tmp/flx-qmp.sock}"
 cleanup() { [ -n "$BRIDGE" ] && kill "$BRIDGE" 2>/dev/null; rm -f "$QMP"; }
 trap cleanup EXIT INT TERM
 
-if [ "$(uname -s)" = "Darwin" ]; then
-  ACCEL="-accel hvf -cpu host"
+# 4. QEMU flags — choose acceleration, machine and display by OS + arch
+OS="$(uname -s)"
+if [ "$OS" = "Darwin" ]; then
+  # macOS: HVF for both arm64 and x86_64
+  if [ "$TARGET" = "arm64" ]; then
+    MACHINE="virt"; ACCEL="-accel hvf -cpu host"; CONSOLE="ttyAMA0"
+  else
+    MACHINE="q35"; ACCEL="-accel hvf -cpu host"; CONSOLE="ttyS0"
+  fi
   DEFAULT_DISP="cocoa"
 else
-  if [ "$(uname -m)" = "aarch64" ]; then
-    ACCEL="-accel kvm -cpu host"
+  # Linux
+  if [ "$TARGET" = "$HOST_ARCH" ]; then
+    # Native: use KVM for maximum speed
+    if [ "$TARGET" = "arm64" ]; then
+      MACHINE="virt"; ACCEL="-accel kvm -cpu host"; CONSOLE="ttyAMA0"
+    else
+      MACHINE="q35"; ACCEL="-accel kvm -cpu host"; CONSOLE="ttyS0"
+    fi
   else
-    ACCEL="-accel tcg -cpu cortex-a72"
+    # Cross-arch: software emulation (slow, testing only)
+    if [ "$TARGET" = "arm64" ]; then
+      MACHINE="virt"; ACCEL="-accel tcg -cpu cortex-a72"; CONSOLE="ttyAMA0"
+    else
+      MACHINE="q35"; ACCEL="-accel tcg -cpu qemu64"; CONSOLE="ttyS0"
+    fi
   fi
   DEFAULT_DISP="gtk"
 fi
 
-case "${W12_DISPLAY:-$DEFAULT_DISP}" in
+case "${FLX_DISPLAY:-$DEFAULT_DISP}" in
   cocoa) DISP="-display cocoa,zoom-to-fit=on,show-cursor=off" ;;
   gtk)   DISP="-display gtk,zoom-to-fit=on,show-cursor=off" ;;
   sdl)   DISP="-display sdl" ;;
@@ -47,10 +82,24 @@ case "${W12_DISPLAY:-$DEFAULT_DISP}" in
   *)     DISP="-display none" ;;
 esac
 
+# 5. Select QEMU binary and kernel/console params
+if [ "$TARGET" = "arm64" ]; then
+  QEMU="qemu-system-aarch64"
+  KERNEL_FLAG="-kernel build/Image"
+  CONSOLE_FLAG="console=ttyAMA0"
+  MACHINE_FLAGS="-M $MACHINE $ACCEL -smp 4 -m 2048"
+else
+  QEMU="qemu-system-x86_64"
+  KERNEL_FLAG="-kernel build/bzImage"
+  CONSOLE_FLAG="console=ttyS0"
+  MACHINE_FLAGS="-M $MACHINE $ACCEL -smp 4 -m 2048"
+fi
+
 rm -f "$QMP"
-qemu-system-aarch64 -M virt $ACCEL -smp 4 -m 2048 \
-  -kernel build/Image -initrd build/initramfs.cpio \
-  -append "console=ttyAMA0 loglevel=4 quiet" \
+$QEMU $MACHINE_FLAGS \
+  -vga none \
+  $KERNEL_FLAG -initrd build/initramfs.cpio \
+  -append "$CONSOLE_FLAG loglevel=4 quiet" \
   -device virtio-gpu-pci,xres=1920,yres=1080 \
   -device virtio-keyboard-pci -device virtio-tablet-pci \
   -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
@@ -59,4 +108,4 @@ qemu-system-aarch64 -M virt $ACCEL -smp 4 -m 2048 \
   -rtc base=localtime \
   $DISP \
   -serial file:build/serial.log \
-  -qmp unix:$QMP,server,nowait
+  -qmp unix:"$QMP",server,nowait

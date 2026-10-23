@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Windows 12 Copilot bridge (runs on the Mac, not in the guest). Same pattern as the
-Lumen OS 2 YouTube bridge: a tiny stdlib HTTP server on 127.0.0.1 that the guest reaches
+"""FLX OS AI assistant bridge. Runs on the host machine, not in the guest. Same pattern as
+the Lumen OS 2 YouTube bridge: a tiny stdlib HTTP server on 127.0.0.1 that the guest reaches
 through QEMU's user network as http://10.0.2.2:8766.
 
 POST /ask  {"prompt": "...", "history": [{"role": "user"|"assistant", "text": "..."}]}
@@ -13,8 +13,9 @@ import json, os, select, shutil, subprocess, sys, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("W12_BRIDGE_PORT", "8766"))
-SYSTEM = ("You are Copilot inside Windows 12, an unofficial fan OS. Answer briefly in plain text "
-          "(no markdown, no bullet symbols, no code fences). Keep answers under 120 words.")
+SYSTEM = ("Tu es un assistant IA intégré dans FLX OS, un système d'exploitation libre par Florynx Labs. "
+          "Réponds brièvement en texte simple "
+          "(pas de markdown, pas de puces, pas de blocs de code). Garde les réponses sous 120 mots.")
 TIMEOUT = 90           # seconds for the whole answer
 MAX_PROMPT = 4000      # characters accepted from the guest
 MAX_ANSWER = 6000      # characters streamed back
@@ -51,7 +52,7 @@ class H(BaseHTTPRequestHandler):
         self.wfile.flush()
 
     def do_GET(self):
-        body = b"Windows 12 Copilot bridge. POST /ask\n"
+        body = b"FLX OS AI assistant bridge. POST /ask\n"
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(body)))

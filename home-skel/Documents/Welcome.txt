@@ -1,13 +1,18 @@
-Welcome to Windows 12!
+Bienvenue dans FLX OS !
 
-This is an unofficial fan project, not affiliated with Microsoft.
+FLX OS est un système d'exploitation libre, développé par Florynx Labs.
+Conçu pour être simple, rapide et sécurisé.
 
-Everything you see above the Linux kernel was written from scratch:
-the compositor, the window manager, the toolkit, the shell and every app.
+Tout ce que vous voyez au-dessus du kernel Linux a été écrit de zéro :
+le compositeur, le gestionnaire de fenêtres, la bibliothèque graphique,
+le shell et toutes les applications.
 
-Try:
-  - Start (Win key) and search for an app
-  - Hover the maximize button for snap layouts
-  - Alt+Tab, Win+Arrow keys
-  - The Copilot button in the top-right corner
-  - Terminal: type "proof"
+À essayer :
+  - Start (touche Win) pour chercher une application
+  - Survolez le bouton maximiser pour les layouts d'ancrage
+  - Alt+Tab, touches Win+Flèches pour naviguer
+  - Le bouton Copilot en haut à droite
+  - Terminal : tapez « proof » ou « fetch »
+  - Paramètres > Personnalisation pour changer le thème et le fond d'écran
+
+FLX OS — Plus qu'un système. Une vision.

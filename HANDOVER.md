@@ -1,43 +1,146 @@
-# Windows 12 — handover for recording
+# FLX OS — HANDOVER
 
-## Start / stop
-```bash
-cd ~/Documents/Windows12 && ./run.sh                 # QEMU window (cocoa), bridge started automatically
-W12_DISPLAY=none ./run.sh                            # headless, drive it via QMP only
+> Document de passation destiné à tout développeur reprenant le projet.
+> Dernière mise à jour : octobre 2026 — Florynx Labs.
+
+---
+
+## 1. Vue d'ensemble
+
+FLX OS est un système d'exploitation expérimental écrit de zéro en C pur, sans bibliothèques
+externes (glibc, libstdc++, GTK, Qt...). Il tourne au-dessus d'un kernel Linux 6.12 compilé avec
+une configuration minimale pour les architectures **x86_64** et **arm64**.
+
+L'objectif à long terme est de remplacer Linux par un microkernel propriétaire (voir `docs/FLX_KERNEL_MIGRATION.md`).
+
+---
+
+## 2. Flux de build
+
 ```
-- QMP: `/tmp/w12-qmp.sock` (stable path). Screen is 1920x1080, absolute tablet coordinates.
-- Serial log with `W12:` markers: `build/serial.log`. Bridge log: `build/bridge.log`.
-- Fresh state: delete `data/disk.img` (recreated from the template on the next run; light theme, sample files).
-- Stop: close the QEMU window, Ctrl-C run.sh, `python3 tools/qmp.py quit`, or Start > power > Shut down.
-- Helper: `python3 tools/qmp.py shot PATH | click X Y [right] | dblclick X Y | drag X0 Y0 X1 Y1 [ms] | type TEXT | key COMBO | wheel X Y N`
-  (key combos are QEMU qcodes joined by `-`, e.g. `meta_l`, `meta_l-left`, `alt-tab`, `ctrl-s`, `alt-f4`).
+build.sh
+  └─▶ docker run --platform $PLATFORM flx-toolchain-{arch}
+          └─▶ docker/build-inside.sh
+                ├─ linux-6.12 (kernel/flx-{arch}.config)
+                ├─ musl statique — src/src/Makefile
+                ├─ scripts/prepare_assets.py  (wallpapers + icons)
+                ├─ gen_wallpaper (fallback procédural)
+                └─ Outputs: build/bzImage | build/Image
+                            build/initramfs.cpio
+                            build/home.img
+run.sh
+  └─▶ qemu-system-{arch}
+        ├─ -kernel build/{bz}Image
+        ├─ -initrd build/initramfs.cpio
+        ├─ -drive  data/disk.img   (ext2 /home persistant)
+        └─ -qmp    /tmp/flx-qmp.sock
+```
 
-## Timeline after QEMU starts
-- ~0.1 s boot animation (logo + dots) · ~3.0 s lock screen (`W12:READY lock`) · weather arrives ~1 s after DHCP.
-- Unlock: click anywhere, Enter, or drag up. `W12:READY desktop` after the 0.42 s slide.
+---
 
-## Fixed screen positions (guest pixels)
-- Top bar (y 0..36): Widgets/weather (100, 18) · search (960, 18) opens Start · network/volume/battery (1690, 18) opens Quick Settings · clock (1800, 18) opens Widgets · Copilot (1893, 18)
-- Taskbar (y 1012..1068, centred): Start (717, 1040) · Search (769, 1040) · pinned apps from x=829 every 52 px:
-  Explorer 829 · Browser 881 · Terminal 933 · Notepad 985 · Settings 1037 · Task Manager 1089 · Calculator 1141 · Minesweeper 1193 (running unpinned apps get added after, the bar re-centres)
-- Start menu (x 620..1300, y 300..1000): pinned grid centres are printed as `W12:START_ITEM <exe> X Y` when it opens:
-  row 1 y=471: Explorer 700 · Settings 804 · Terminal 908 · Notepad 1012 · Calculator 1116 · Browser 1220; row 2 y=567: Task Manager 700 · Minesweeper 804 · Proof 908.
-  Type to search, Enter opens the first match. Power (1250, 966) → Lock / Restart / Shut down at y 817 / 857 / 897, x≈1140.
-- Every window open prints `W12:WINDOW_MAPPED <exe> <id> X Y W H` (content rect; titlebar is the 40 px above Y).
-  Caption buttons in the titlebar from the right edge: close (-23), maximize (-69, hover 0.45 s = snap flyout), minimize (-115).
+## 3. Architecture du code
 
-## Keyboard
-Win = Start · Win+←/→/↑/↓ snap/maximize/restore · Win+C Copilot · Win+W Widgets · Win+A Quick Settings · Win+E Explorer · Win+L lock · Alt+Tab · Alt+F4 · Esc closes panels.
+### 3.1 IPC — protocole FLX
 
-## Good demo beats
-- Terminal: `fetch`, `ps`, `ifconfig`, `ping -c 3 10.0.2.2`, `curl https://example.com`, `proof` (scroll back with the wheel).
-- Settings > Personalization: dark/light, accents, wallpapers (crossfade); Settings > About > Open Proof.
-- Snap: Win+Left on one window, Win+Right on another → snap assist shows the rest; or hover maximize for the layout flyout.
-- Browser: quick links (Wikipedia mobile renders best), or type `en.m.wikipedia.org/wiki/Linux_kernel`.
-- Task Manager: open Calculator, select it in Task Manager, End task → the window closes (it was a real process).
-- Copilot: answers stream in 2-5 s via `claude -p` on the Mac; kill `bridge/copilot_bridge` to show the offline message.
+Toutes les applications se connectent via **Unix socket** `/run/flx.sock`.
+La constante `W12_SOCK` (alias `FLX_SOCK`) dans `src/lib/w12.h` définit ce chemin.
 
-## Markers worth waiting on
-`W12:READY boot|lock|desktop`, `W12:WINDOW_OPEN/MAPPED/CLOSE <exe>`, `W12:START open`, `W12:START_ITEM`, `W12:SNAP <exe> <how>`,
-`W12:SNAP_ASSIST`, `W12:ALTTAB <exe>`, `W12:THEME dark=..`, `W12:COPILOT_DONE ok|offline`, `W12:BROWSER loaded <status> <url>`,
-`W12:SAVED <path>`, `W12:CALC ...`, `W12:TASKMGR kill <pid> <name>`, `W12:PROOF ...`, `W12:POWER shutdown|restart`.
+Le protocole est défini dans `src/lib/w12.h` (énumérations `Msg`, `MsgType`) et documenté
+dans `src/comp/wm.c`.
+
+### 3.2 Rendu graphique
+
+- **Backend** : DRM/KMS via `virtio-gpu-pci` — le compositeur ouvre `/dev/dri/card0`.
+- **Pipeline** : le compositeur (`src/comp/wm.c`) maintient un framebuffer 1920×1080 ARGB32.
+  Le rendu est multi-threadé (bandes horizontales, 1 thread/cœur).
+- **Rasteriseur** : `src/lib/gfx.c` — cercles, rectangles arrondis, arcs, dégradés, flou.
+- **Texte** : `src/lib/font.c` — rendu TrueType à la volée (polices TTF dans `/share/fonts/`).
+
+### 3.3 Thème & Assets
+
+- Les wallpapers sont au format **FLXW** : magic `0x574C5846` + width + height + pixels ARGB32.
+- Le compositeur charge `bloom` (index 0), `aurora` (1), `dune` (2) depuis `/share/wallpapers/`.
+- Les icônes d'application PNG 128×128 sont dans `/share/icons/`.
+- `scripts/prepare_assets.py` convertit les sources de `assets/` en ces formats.
+- Si un wallpaper manque, `tools/gen_wallpaper.c` génère un dégradé de secours.
+
+### 3.4 Réseau
+
+- **Init** (`src/init/`) configure l'interface eth0 via DHCP en userland.
+- **netd** (`src/netd/`) est le démon réseau avec isolation de privilèges.
+- **Pile TCP/IP** (`src/net/`) : implémentation bare-metal + HTTP/HTTPS via BearSSL.
+- **CA Bundle** : `third_party/cacert.pem` → `build/gen/ta.c` (symboles `flx_tas`, `flx_tas_num`).
+
+### 3.5 Shell
+
+- `src/sh/w12sh.c` est le shell interactif (`flxsh`) : prompt couleur, historique, `fetch`, `proof`, `neofetch`.
+- La commande `fetch` affiche les infos système avec le logo Florynx ASCII.
+
+---
+
+## 4. Multi-architecture
+
+| Paramètre | x86_64 | arm64 |
+|-----------|--------|-------|
+| `FLX_ARCH` | `x86_64` | `arm64` |
+| Machine QEMU | `q35` | `virt` |
+| Kernel image | `build/bzImage` | `build/Image` |
+| Console | `ttyS0` | `ttyAMA0` |
+| Config kernel | `kernel/flx-x86_64.config` | `kernel/flx-arm64.config` |
+| Volume Docker | `flx-kbuild-x86_64` | `flx-kbuild-arm64` |
+
+---
+
+## 5. Tests
+
+Le test E2E (`tests/e2e.py`) :
+1. Boot headless (`FLX_DISPLAY=none`)
+2. Attend les marqueurs série `W12:READY`, `W12:BOOT`, etc.
+3. Pilote les applications via QMP (clics absolus tablet + clavier)
+4. Prend des screenshots à chaque étape dans `tests/out/`
+5. Vérifie les marqueurs série attendus
+
+```sh
+./tests/e2e.sh              # lance tous les tests
+python3 tests/e2e.py -v     # verbose
+```
+
+---
+
+## 6. Fichiers critiques
+
+| Fichier | Rôle |
+|---------|------|
+| `src/lib/w12.h` | En-tête global partagé — constantes, types, API libflxui |
+| `src/comp/shell.c` | Shell graphique : start menu, barre des tâches, lock screen, wallpapers |
+| `src/comp/wm.c` | WM : fenêtres, focus, resize, snap layouts, animations |
+| `src/lib/icons.c` | Icônes d'apps et glyphes dessinés en code, table APPS[] |
+| `docker/build-inside.sh` | Script de build complet dans le conteneur |
+| `kernel/flx-x86_64.config` | Fragment config kernel x86_64 |
+| `kernel/flx-arm64.config` | Fragment config kernel arm64 |
+
+---
+
+## 7. Points d'attention
+
+> [!CAUTION]
+> Le socket IPC `/run/flx.sock` a été renommé de `/run/w12.sock` — vérifier que
+> tous les anciens tests ou scripts custom utilisent le nouveau chemin (ou `W12_SOCK`/`FLX_SOCK`).
+
+> [!WARNING]
+> Les symboles TLS (`w12_tas`) ont été renommés en `flx_tas` — forcer un rebuild complet
+> si vous avez un volume Docker kbuild existant (`docker volume rm flx-kbuild-arm64`).
+
+> [!NOTE]
+> La variable d'environnement `W12_QMP` est encore acceptée comme alias de `FLX_QMP` dans
+> `tools/qmp.py` pour rétrocompatibilité.
+
+---
+
+## 8. Prochaines étapes
+
+- [ ] Intégrer les vrais wallpapers HD dans `assets/wallpapers/`
+- [ ] Charger les icônes PNG au runtime depuis `/share/icons/` (voir `src/lib/icons.c:icon_app`)
+- [ ] Exposer un protocole Wayland minimal
+- [ ] Migrer vers un kernel custom (voir `docs/FLX_KERNEL_MIGRATION.md`)
+- [ ] Signature cryptographique des binaires dans l'initramfs

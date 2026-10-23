@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Windows 12 end-to-end test. Boots the OS headless through run.sh on a fresh copy of the
+"""FLX OS end-to-end test. Boots the OS headless through run.sh on a fresh copy of the
 home disk, drives it only through QMP (absolute tablet + keyboard), waits on serial markers
 (W12:...), and saves a screenshot for every step to tests/out/. Exit code != 0 on failure."""
 import os, re, shutil, subprocess, sys, time
@@ -79,7 +79,7 @@ def main():
     # --- Notepad: type, save, unsaved prompt -----------------------------------------------
     g = open_from_start("notepad")
     check("Notepad opens", g)
-    q.type("Hello from the Windows 12 e2e test!\nSaved by our own Notepad on an ext2 disk.")
+    q.type("Bonjour depuis le test e2e de FLX OS!\nSauvegardé par notre propre éditeur de texte sur un disque ext2.")
     q.key("ctrl-s"); time.sleep(0.4)
     q.key("ctrl-a"); q.type("e2e-note.txt\n")
     check("Notepad saves a file", wait(r"SAVED /home/user/Documents/e2e-note.txt", 5))
@@ -238,7 +238,7 @@ def main():
 
     # --- Copilot: bridge up, then bridge down ---------------------------------------------------
     m = mark(); q.click(1893, 18); time.sleep(0.5)
-    q.type("In one sentence, what is Windows 12?\n")
+    q.type("En une phrase, qu'est-ce que FLX OS?\n")
     r = wait(r"COPILOT_DONE (\S+)", 90, m)
     check("Copilot answers through the bridge (real claude -p)", r and r.group(1) == "ok", r and r.group(0))
     time.sleep(0.4); shot("copilot_answer")
@@ -265,7 +265,7 @@ def main():
         check("QEMU powered off", True)
     except subprocess.TimeoutExpired:
         check("QEMU powered off", False)
-        subprocess.run(["pkill", "-f", "qemu-system-aarch64.*w12-qmp"])
+        subprocess.run(["pkill", "-f", "qemu.*flx-qmp"])
 
     errors = re.findall(r"W12:ERROR.*", serial())
     check("no W12:ERROR markers in the serial log", not errors, "; ".join(errors[:3]))

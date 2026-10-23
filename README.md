@@ -1,133 +1,173 @@
-# Windows 12
+# FLX OS
 
-<p align="center"><img src="screenshots/M7-snap.png" width="100%" alt="Windows 12 desktop with two snapped windows"></p>
+> **Plus qu'un système. Une vision.**
+> Un système d'exploitation open-source, rapide et sécurisé par **Florynx Labs**.
 
-**An unofficial fan project, not affiliated with Microsoft.** A real, bootable desktop OS for
-QEMU on Apple silicon: the Linux kernel at the bottom, and **everything above `/dev/dri` and
-`/dev/input` written from scratch in this repository**: PID 1, the DHCP client, the compositor,
-the window manager, the widget toolkit, the shell, the terminal emulator and every app.
-C, statically linked against musl. No X11, no Wayland, no Qt/GTK/SDL, no browser engine,
-no busybox.
+[![Build](https://img.shields.io/badge/build-passing-brightgreen)](#) [![Arch](https://img.shields.io/badge/arch-x86__64%20%7C%20arm64-blue)](#) [![License](https://img.shields.io/badge/license-MIT-orange)](#)
 
-It was built in one session by Claude Code for the YouTube video *"I built Windows 12 and it
-actually boots"* on The Render Guy, reusing code from Lumen OS 2 (MIT, same author).
+---
 
-## Run it
+## Présentation
 
-You need an Apple silicon Mac with Docker (colima works) and QEMU:
+FLX OS est un système d'exploitation expérimental construit **de zéro** au-dessus du kernel Linux.
+Tout ce qui s'exécute au-dessus de Linux — compositeur, gestionnaire de fenêtres, bibliothèque
+graphique, shell, et chaque application — a été écrit en C pur, sans aucune dépendance externe
+(pas de glibc, pas de libstdc++, pas de Gtk, pas de Qt, pas d'Electron).
 
-```bash
-brew install qemu
+L'interface est rendue pixel par pixel par notre propre rasteriseur, basé sur le travail de
+Lumen OS 2 (MIT, Jakub Dostál).
+
+```
+┌─────────────────────────────────────────────┐
+│  FLX OS  (0.1.0)                            │
+│  ┌──────────────────────────────────────┐   │
+│  │  Compositeur + WM        (src/comp/) │   │
+│  │  Shell + Start menu      (src/sh/)   │   │
+│  │  Applications            (src/apps/) │   │
+│  │  libflxui                (src/lib/)  │   │
+│  │  Pile réseau + TLS       (src/net/)  │   │
+│  └──────────────────────────────────────┘   │
+│         Kernel Linux 6.12 (musl)            │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+## Architecture
+
+| Composant | Chemin | Description |
+|-----------|--------|-------------|
+| **init** | `src/init/` | PID 1 : démarre le réseau, le compositeur et le shell |
+| **Compositeur / WM** | `src/comp/` | Rendu DRM/KMS, gestion des fenêtres, shell graphique |
+| **libflxui** | `src/lib/` | Rasteriseur, texte, thèmes, icônes, protocole IPC |
+| **Shell FLX** | `src/sh/` | Shell interactif (`flxsh`) avec prompt couleur et historique |
+| **Applications** | `src/apps/` | Explorateur, Éditeur, Calc, Navigateur, Gestionnaire de tâches… |
+| **Pile réseau** | `src/net/` | TCP/IP, HTTP/HTTPS, DNS — tout en stdlib + BearSSL |
+| **netd** | `src/netd/` | Démon réseau DHCP/WiFi (isolation de privilèges) |
+| **Bridge IA** | `bridge/` | Proxy HTTP vers Claude (accessible via 10.0.2.2:8766) |
+
+---
+
+## Prérequis
+
+| Outil | Version |
+|-------|---------|
+| Docker | ≥ 20.10 |
+| QEMU | ≥ 8.0 (`qemu-system-x86_64` ou `qemu-system-aarch64`) |
+| Python | ≥ 3.9 (tests + scripts uniquement) |
+| KVM | optionnel (recommandé pour x86_64 natif) |
+
+```sh
+# Ubuntu / Debian
+sudo apt install -y docker.io qemu-system-x86 qemu-system-arm qemu-kvm python3
+```
+
+---
+
+## Build & Lancement
+
+```sh
+# Cloner le dépôt
+git clone https://github.com/Florynx-labs/flx-os.git
+cd flx-os
+
+# Build pour l'architecture courante (x86_64 ou arm64 auto-détecté)
+./build.sh
+
+# Lancer
 ./run.sh
+
+# Forcer une architecture spécifique
+FLX_ARCH=x86_64 ./build.sh
+FLX_ARCH=x86_64 ./run.sh
+
+# Affichage VNC (headless)
+FLX_DISPLAY=vnc ./run.sh
 ```
 
-`run.sh` builds everything if needed (kernel + userland + rootfs inside an arm64 Alpine
-container, ~4 min the first time, seconds afterwards), creates the persistent home disk
-`data/disk.img` on first run, starts the Copilot bridge on the Mac, and boots QEMU in a window.
-The lock screen is up about **3 seconds** after QEMU starts.
+### Variables d'environnement
 
-| Option | |
-|---|---|
-| `W12_DISPLAY=cocoa` (default), `vnc` (localhost:5912), `none` | display |
-| `W12_NO_BRIDGE=1` | start without the Copilot bridge (Copilot shows its offline message) |
-| `W12_DISK=path.img` | another home disk |
-| QMP socket | `/tmp/w12-qmp.sock` (screenshots, input; see `tools/qmp.py`) |
-| Serial log | `build/serial.log` (kernel + `W12:` markers from every process) |
+| Variable | Valeur | Description |
+|----------|--------|-------------|
+| `FLX_ARCH` | `x86_64` \| `arm64` | Architecture cible (auto-détecté) |
+| `FLX_DISPLAY` | `gtk` \| `cocoa` \| `sdl` \| `vnc` \| `none` | Mode d'affichage |
+| `FLX_DISK` | chemin | Disque persistant `/home` personnalisé |
+| `FLX_NO_BRIDGE` | `1` | Désactive le bridge IA |
+| `FLX_QMP` | chemin socket | Socket QMP pour les tests |
 
-Copilot needs the `claude` CLI logged in on the Mac. Everything else works offline except the
-browser, weather and `curl`.
+---
 
-### Things to try
+## Architectures supportées
 
-- Click / Enter / swipe up on the lock screen. **Win** opens Start; type to search.
-- Hover a window's maximize button for **snap layouts**; drag a window to a screen edge or
-  corner; **Win+←/→/↑/↓**; **Alt+Tab**; double-click a titlebar.
-- Top bar: **Widgets** (left, or Win+W), search (centre), network/volume/battery opens **Quick
-  Settings** (Win+A: real network state, dark mode, accent, wallpaper, lock), clock, **Copilot**
-  (right, or Win+C).
-- After snapping a window to one half, **snap assist** offers the other windows for the rest.
-- Right-click the desktop for Personalize / Display settings / Open in Terminal.
-- Terminal: `help`, `fetch`, `ps`, `ifconfig`, `ping -c 3 10.0.2.2`, `curl https://example.com`, **`proof`**.
-- Settings → Personalization: light/dark, six accents, three wallpapers, applied live everywhere.
-- Settings → About → **Proof**.
+| Architecture | Machine QEMU | Accélération | Kernel |
+|---|---|---|---|
+| `x86_64` | `q35` | KVM (Linux natif), HVF (macOS), TCG | `bzImage` |
+| `arm64` | `virt` | KVM (ARM Linux), HVF (Apple Silicon), TCG | `Image` |
 
-## What's inside
+---
 
-```
- apps (one process each, libw12ui)                         w12sh (own shell on a pty)
- explorer settings terminal notepad calc browser taskmgr minesweeper proof
-        |   SOCK_SEQPACKET /run/w12.sock  +  memfd ARGB double buffers (explicit release)
- w12-compositor   DRM/KMS dumb buffers + page flip, evdev, window manager, shell UI,
-                  glass blur, snap layouts, animations, software cursor, Copilot client
- w12-netd         own DHCP client (raw AF_PACKET frames) + rtnetlink  ->  /run/net.conf
- /sbin/init       PID 1: mounts, ext2 /home on virtio-blk, respawn, shutdown/restart
- ------------------------------------------------------------------------------------
- Linux 6.12 (arm64, minimal config, no fbcon)        QEMU virt, -accel hvf, virtio-*
-```
+## Assets & Interface
 
-| Component | What it does |
-|---|---|
-| `src/init` | PID 1. Mounts proc/sys/devtmpfs/devpts/tmpfs, mounts `/dev/vda` (ext2) on `/home`, starts netd + compositor, reaps orphans, restarts a crashed compositor, powers off/reboots (compositor exit code 43/42). |
-| `src/netd` | DHCP DISCOVER/OFFER/REQUEST/ACK built byte by byte on an `AF_PACKET` socket, address and route set over rtnetlink, result published in `/run/net.conf`. |
-| `src/comp` | The compositor. Opens `/dev/dri/card0`, two 1920×1080 dumb buffers, page flips. Reads evdev (virtio tablet + keyboard). Accepts app connections, maps their memfd buffers, composites windows with rounded corners, soft shadows and Mica titlebars (tinted pre-blurred wallpaper), drag/resize/min/max/close, snap flyout, drag-to-edge with preview, Win+arrows, Alt+Tab, open/close/minimize animations. Draws the boot animation, lock screen, floating glass taskbar, top bar, Start menu, Widgets board and Copilot panel. Redraws only when something changed. |
-| `src/lib` (libw12ui) | Software rasteriser (signed-distance AA rounded rects, polygons, gradients, shadows, frosted glass blur), Selawik text through stb_truetype with a glyph cache, every icon drawn in code (including the logo: one glass pane in perspective), theme palette, immediate-mode widgets (buttons, fields, toggles, scroll views), the app runtime for the window protocol, our own JSON parser. |
-| `src/net` | DNS resolver, HTTP/1.1 client (keep-alive, chunked, redirects, cookies), TLS via BearSSL with the Mozilla CA bundle, inflate. |
-| `src/web` | HTML tokenizer + tree builder, CSS parser/cascade, block/inline/table layout into a display list. No JavaScript. |
-| `src/sh` | `w12sh`: line-based shell with built-in `ls cd pwd cat echo mkdir rm touch ps kill uname free df ifconfig ping curl clear help proof open fetch date whoami hostname exit`. `ping` uses a raw ICMP socket, `curl` our HTTP/TLS stack. |
-| `src/apps` | File Explorer, Settings, Terminal (own VT parser on a pty), Notepad, Calculator, Browser, Task Manager, Minesweeper, Proof. |
-| `bridge/copilot_bridge` | Runs on the Mac (Python stdlib). See below. |
-| `tools/gen_wallpaper.c` | Generates the three wallpapers procedurally at build time. |
+Les fonds d'écran et icônes proviennent du dossier `assets/` et sont convertis
+automatiquement au build par `scripts/prepare_assets.py` :
 
-### Copilot, honestly
+- **Fonds d'écran** → `build/wallpapers/*.raw` (format FLXW, 1920×1080 ARGB32)
+- **Icônes** → `build/icons/*.png` (128×128 RGBA)
 
-The guest has no API key and no model. `run.sh` starts `bridge/copilot_bridge` on the Mac,
-listening on **127.0.0.1:8766 only**; QEMU's user network exposes it to the guest as
-`10.0.2.2:8766`. The compositor POSTs `{"prompt", "history"}` with its own HTTP client; the
-bridge runs `claude -p` with **all tools disabled** (`--tools ""`), no settings, hooks, MCP
-servers or slash commands, in an empty temporary directory with a clean environment, the prompt
-on stdin (never through a shell), a 90 s timeout and a length cap, and streams the answer back as
-chunked NDJSON. The panel parses it with our JSON parser and shows tokens as they arrive. With
-the bridge down the panel says *"Copilot is offline. The bridge on the host isn't running."*
+Les noms de wallpapers attendus par le compositeur : `bloom`, `aurora`, `dune`, `lock`.
+Si un fichier `.raw` est manquant, `gen_wallpaper` génère un dégradé procédural de secours.
 
-### Proof mode
-
-Terminal → `proof`, or Settings → About → Proof. Shows every process from `/proc` with its
-executable path (all ours, plus kernel threads), lines of code per component computed at build
-time, the full root filesystem listing, and the result of `scripts/verify_no_toolkits.sh`, which
-runs during every build, scans the rootfs (file names and strings in binaries) for X11, Wayland,
-Qt, GTK, SDL, Cairo, Skia, FreeType, LVGL, ImGui, WebKit/Blink, Chromium, Gecko, Electron,
-busybox and systemd, and **fails the build** if it finds any.
+---
 
 ## Tests
 
-```bash
-tests/e2e.sh
+```sh
+# Test bout-en-bout (headless, tous les apps)
+./tests/e2e.sh
+
+# Vérification rapide : aucune dépendance toolkit
+scripts/verify_no_toolkits.sh build/
 ```
 
-Boots headless on a fresh copy of the home disk and drives the whole OS through QMP (absolute
-tablet + keyboard events only), waiting on `W12:` serial markers instead of sleeps: lock →
-unlock → every app opened from Start (Notepad save + unsaved prompt, Calculator, Minesweeper,
-Terminal `proof` + `ping`, Browser loads example.com and Wikipedia over HTTPS, Task Manager ends
-a real process, Explorer creates/renames/deletes a folder, Settings switches to dark theme,
-About → Proof) → Widgets → snap (Win+arrows and the flyout) → Alt+Tab → Copilot with the bridge
-up (real answer) and down (offline message) → Win+L → Shut down. Screenshots of every step go
-to `tests/out/`, a PASS/FAIL line per check, non-zero exit on failure.
+---
 
-Milestone screenshots are in `screenshots/`, the build log with timestamps in `PROGRESS.log`.
+## Roadmap
 
-## Third-party code in the image
+- [ ] **FLX Kernel** — migration du kernel Linux vers un microkernel custom (voir [`docs/FLX_KERNEL_MIGRATION.md`](docs/FLX_KERNEL_MIGRATION.md))
+- [ ] **Wayland-over-flx** — exposition d'un protocole Wayland minimal
+- [ ] **Package manager** — gestionnaire de paquets natif FLX
+- [ ] **GPU acceleration** — rendu OpenGL ES via virgl
+- [ ] **UEFI boot** — bootloader FLX sans QEMU `-kernel`
 
-Only what the rules allow: the **Linux kernel**, **musl libc** (static), **stb_truetype** and
-**stb_image** (public domain), **BearSSL** (MIT) and the Mozilla CA bundle, and the **Selawik**
-font (SIL Open Font License, `third_party/fonts/LICENSE.txt`). Everything else is in `src/`.
+---
 
-## Credits
+## Structure du dépôt
 
-- Reuses code from **Lumen OS 2** (MIT, © Jakub Dostál): kernel config and build pipeline,
-  DRM/KMS and evdev code, the rasteriser and text code, the DHCP/DNS/HTTP/TLS stack and the
-  HTML/CSS engine, and the Mac-side bridge pattern.
-- Font: Selawik by Microsoft, under the SIL Open Font License 1.1. The name "Windows" is
-  Microsoft's trademark; this project is an unofficial, non-commercial fan homage, not affiliated
-  with or endorsed by Microsoft. The logo, icons and wallpapers are original.
+```
+flx-os/
+├── src/          # Code source de l'OS (C, musl statique)
+│   ├── comp/     # Compositeur + WM + shell graphique
+│   ├── lib/      # libflxui : rasteriseur, texte, thème, icons, IPC
+│   ├── sh/       # Shell FLX (flxsh)
+│   ├── apps/     # Applications (9 apps)
+│   ├── net/      # Pile réseau TCP/HTTP/HTTPS/DNS
+│   └── netd/     # Démon réseau
+├── kernel/       # Fragments de configuration kernel
+│   ├── flx-arm64.config
+│   └── flx-x86_64.config
+├── docker/       # Toolchain Alpine musl
+├── assets/       # Fonds d'écran, icônes, logos originaux
+├── bridge/       # Bridge IA (HTTP → Claude)
+├── tests/        # Tests E2E via QMP
+├── tools/        # Outils de test (qmp.py)
+├── scripts/      # Scripts de build et vérification
+├── docs/         # Documentation technique approfondie
+├── home-skel/    # Squelette /home initial
+└── third_party/  # BearSSL, polices de caractères, CA bundle Mozilla
+```
 
-MIT license, see `LICENSE`.
+---
+
+## Licence
+
+MIT — Florynx Labs. Inspiré par [Lumen OS 2](https://github.com/nicowillis/lumen-os-2) (MIT, Jakub Dostál).

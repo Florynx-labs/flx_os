@@ -1,40 +1,47 @@
-# Windows 12 — plan
+# FLX OS — Plan d'architecture
 
-Unofficial fan project, not affiliated with Microsoft. Linux kernel below; everything above
-`/dev/dri` and `/dev/input` is written in this repo (C + musl, static).
+> Par Florynx Labs. Open-source, sans affiliation avec aucune entreprise.
+> Kernel Linux en dessous ; tout ce qui est au-dessus de `/dev/dri` et `/dev/input`
+> a été écrit dans ce dépôt (C + musl statique).
 
 ## Architecture
 
 ```
- apps (separate processes, libw12ui)          w12sh (own shell, runs on a pty)
+ apps (processus séparés, libflxui)           flxsh (shell interactif, pty)
  explorer settings terminal notepad calc browser taskmgr minesweeper proof
-        |  SOCK_SEQPACKET /run/w12.sock  +  memfd ARGB double buffers (explicit release)
- w12-compositor  — DRM/KMS dumb buffers + page flip, evdev, WM, shell, glass, Copilot client
- w12-netd        — own DHCP client (AF_PACKET) + rtnetlink -> /run/net.conf
- /sbin/init      — PID 1: mounts, ext2 /home on virtio-blk, respawn, shutdown/restart
+         |  SOCK_SEQPACKET /run/flx.sock  +  memfd ARGB double buffers (release explicite)
+ flx-compositor  — DRM/KMS + page flip, evdev, WM, shell, glass, assistant IA
+ flx-netd        — client DHCP (AF_PACKET) + rtnetlink → /run/net.conf
+ /sbin/init      — PID 1 : mounts, ext2 /home sur virtio-blk, respawn, shutdown/restart
  ----------------------------------------------------------------------------------
- Linux 6.12 (arm64, minimal config, no fbcon)            QEMU virt + hvf, virtio-*
+ Linux 6.12 (x86_64 / arm64, config minimale, no fbcon)    QEMU q35|virt + kvm|hvf
 ```
 
-- libw12ui: gfx (SDF rounded rects, shadows, glass blur, polygons), Selawik text via
-  stb_truetype, icons drawn in code, immediate-mode widgets, JSON parser, client protocol.
-- net: DNS, HTTP/1.1 (+chunked, redirects, keep-alive), TLS via BearSSL, inflate (from Lumen OS 2).
-- web: HTML tokenizer/tree builder, CSS cascade, block/inline/table layout (from Lumen OS 2).
-- Copilot: compositor -> HTTP POST 10.0.2.2:8766/ask -> `bridge/copilot_bridge` (Mac) ->
-  `claude -p` with all tools disabled, streamed back as NDJSON.
+- **libflxui** : gfx (SDF rounded rects, ombres, glass blur, polygones), texte TrueType
+  via stb_truetype, icônes dessinées en code, widgets immediate-mode, parseur JSON, protocole client.
+- **net** : DNS, HTTP/1.1 (+chunked, redirects, keep-alive), TLS via BearSSL, inflate (de Lumen OS 2).
+- **web** : tokenizer/tree builder HTML, cascade CSS, layout bloc/inline/table (de Lumen OS 2).
+- **Assistant IA** : compositeur → HTTP POST 10.0.2.2:8766/ask → `bridge/copilot_bridge` (hôte) →
+  `claude -p` sans outils, réponse streamée en NDJSON.
 
-## Milestones
-- [x] M0 repo, toolchain, kernel, own init on serial
-- [x] M1 DRM 1920x1080, boot animation, input, cursor, QMP harness, first screenshot
-- [x] M2 compositor, window protocol, WM, libw12ui, lock screen
-- [x] M3 taskbar, top bar, Start, glass, themes
-- [x] M4 Terminal + shell, Notepad, Calculator, Explorer, Settings/About
-- [x] M5 net stack, Browser, Task Manager, network info
-- [x] M6 Copilot + bridge + offline fallback
+## Jalons accomplis
+
+- [x] M0 dépôt, toolchain, kernel, init sur port série
+- [x] M1 DRM 1920×1080, animation de boot, input, curseur, harness QMP, premier screenshot
+- [x] M2 compositeur, protocole fenêtre, WM, libflxui, écran de verrouillage
+- [x] M3 barre des tâches, barre du haut, Start, glass, thèmes
+- [x] M4 Terminal + shell, Éditeur, Calculatrice, Explorateur, Paramètres/À propos
+- [x] M5 pile réseau, Navigateur, Gestionnaire de tâches, infos réseau
+- [x] M6 Assistant IA + bridge + fallback hors ligne
 - [x] M7 Widgets, snap layouts, Alt+Tab, Minesweeper, polish
-- [x] M8 proof mode, toolkit scan, e2e, README
+- [x] M8 mode proof, scan toolkit, e2e, README
+- [x] M9 **Multi-arch x86_64 + arm64**, rebrand complet FLX OS, vrais assets visuels
 
-## Extras beyond the brief
-- Snap assist, Quick Settings flyout (Win+A), desktop context menu, theme crossfade
-- w12sh line editor with history, Start > All apps, resize cursors, build watermark
-- Restart/shutdown via reboot(2) verified; files persist across reboots on the ext2 disk
+## Futures évolutions
+
+- [ ] FLX Kernel (microkernel custom) — voir `docs/FLX_KERNEL_MIGRATION.md`
+- [ ] Protocole Wayland-flx minimal
+- [ ] Gestionnaire de paquets natif FLX
+- [ ] Accélération GPU via virgl (OpenGL ES)
+- [ ] Boot UEFI sans `-kernel` QEMU
+- [ ] flxsh : complétion de commandes, piping amélioré

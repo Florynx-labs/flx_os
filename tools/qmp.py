@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""QMP harness for Windows 12 (stdlib only). Pattern from Lumen OS 2's test/q.py.
+"""QMP harness for FLX OS (stdlib only). Pattern from Lumen OS 2's test/q.py.
 Coordinates are guest pixels (1920x1080), sent as absolute virtio-tablet events.
 CLI:  qmp.py shot PATH | click X Y [left|right] | move X Y | drag X0 Y0 X1 Y1 [MS]
       qmp.py type TEXT | key COMBO (e.g. meta_l, alt-tab, ctrl-s, ret) | wheel X Y N | quit"""
 import json, os, socket, sys, time
 
-SOCK = os.environ.get("W12_QMP", "/tmp/w12-qmp.sock")
+SOCK = os.environ.get("FLX_QMP", os.environ.get("W12_QMP", "/tmp/flx-qmp.sock"))
 W, H = 1920, 1080
 
 

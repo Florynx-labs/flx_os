@@ -11,8 +11,8 @@
 #include <unistd.h>
 #include "bearssl.h"
 
-extern const br_x509_trust_anchor *w12_tas;
-extern const size_t w12_tas_num;
+extern const br_x509_trust_anchor *flx_tas;
+extern const size_t flx_tas_num;
 #define UA "Mozilla/5.0 (FLX OS; ARM64) FLXBrowser/1.0"
 
 // ---- URLs ------------------------------------------------------------------------------------
@@ -206,7 +206,7 @@ static Conn *conn_open(const Url *u, char *err, int errn) {
     c->tls = !strcmp(u->scheme, "https");
     snprintf(c->host, sizeof c->host, "%s", u->host);
     if (c->tls) {
-        br_ssl_client_init_full(&c->sc, &c->xc, w12_tas, w12_tas_num);
+        br_ssl_client_init_full(&c->sc, &c->xc, flx_tas, flx_tas_num);
         br_ssl_engine_set_buffer(&c->sc.eng, c->iobuf, sizeof c->iobuf, 1);
         br_ssl_client_reset(&c->sc, u->host, 0);
         br_sslio_init(&c->io, &c->sc.eng, sock_rd, &c->fd, sock_wr, &c->fd);

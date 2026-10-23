@@ -1,4 +1,4 @@
-// Window manager + protocol server: accepts app connections on /run/w12.sock, maps their
+// Window manager + protocol server: accepts app connections on /run/flx.sock, maps their
 // memfd buffers, composites windows with rounded corners, soft shadows and Mica titlebars,
 // and implements focus, drag, resize, minimize/maximize, snap layouts and animations.
 #include "comp.h"
