@@ -75,6 +75,7 @@ void app_launch(const char *exe, const char *arg) {
 }
 void app_clip_set(const char *s) { msg_send(sock, M_CLIP_SET, 0, 0, 0, 0, 0, s, -1); }
 void app_set_theme(int dark, int accent, int wall) { msg_send(sock, M_SET_THEME, dark, accent, wall, 0, 0, 0, -1); }
+void app_set_dock(int autohide) { msg_send(sock, M_SET_DOCK, autohide, 0, 0, 0, 0, 0, -1); }
 void app_power(int restart) { msg_send(sock, M_POWER, restart, 0, 0, 0, 0, 0, -1); }
 void app_recent(const char *path) { msg_send(sock, M_RECENT, 0, 0, 0, 0, 0, path, -1); }
 void app_quit(void) { exit(0); }

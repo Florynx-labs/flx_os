@@ -80,6 +80,7 @@ int main(void) {
     mkdir("/home/.config", 0755);
     signal(SIGINT, SIG_IGN);
     pid_t net = spawn("/bin/flx-netd");
+    pid_t auth = spawn("/bin/flx-authd");
     pid_t comp = spawn("/bin/flx-compositor");
     int crashes = 0;
     for (;;) {
@@ -96,6 +97,10 @@ int main(void) {
             say("init: netd exited (%d), restarting", st);
             sleep(1);
             net = spawn("/bin/flx-netd");
+        } else if (p == auth) {
+            say("init: authd exited (%d), restarting", st);
+            sleep(1);
+            auth = spawn("/bin/flx-authd");
         }
     }
 }

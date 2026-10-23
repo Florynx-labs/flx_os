@@ -17,6 +17,7 @@ static int next_id = 1, cascade;
 #define TOP 36             // top bar height
 #define WORK_Y0 TOP
 #define WORK_Y1 1000       // above the floating taskbar
+static inline float work_bottom(void) { return dock_autohide ? (float)SCR_H : (float)WORK_Y1; }
 #define GAP 8
 enum { DR_NONE, DR_MOVE, DR_RESIZE, DR_CONTENT };
 static int drag, rz_edges, drag_btn;
@@ -81,8 +82,17 @@ static void set_rect(Win *w, float x, float y, float ww, float hh, int state) {
 void wm_maximize(Win *w) {
     if (w->state == 1) { set_rect(w, w->rx, w->ry, w->rw, w->rh, 0); MARK("RESTORE %s", w->exe); return; }
     if (w->state == 0) { w->rx = w->x; w->ry = w->y; w->rw = w->w; w->rh = w->h; }
-    set_rect(w, 0, WORK_Y0 + TB, SCR_W, WORK_Y1 - WORK_Y0 - TB, 1);
+    float bottom = work_bottom();
+    set_rect(w, 0, WORK_Y0 + TB, SCR_W, bottom - WORK_Y0 - TB, 1);
     MARK("MAXIMIZE %s", w->exe);
+}
+void wm_update_dock_autohide(void) {
+    float bottom = work_bottom();
+    for (int i = 0; i < MAXWIN; i++) {
+        if (wins[i].used && wins[i].mapped && wins[i].state == 1) {
+            set_rect(&wins[i], 0, WORK_Y0 + TB, SCR_W, bottom - WORK_Y0 - TB, 1);
+        }
+    }
 }
 void wm_snap(Win *w, float x, float y, float ww, float hh, const char *name) {
     if (w->state == 0) { w->rx = w->x; w->ry = w->y; w->rw = w->w; w->rh = w->h; }
@@ -111,7 +121,8 @@ static void assist_card(int i, float *x, float *y, float *w, float *h) {
     *x = asx + (asw - gw) / 2 + (i % per) * (cw + 20); *y = asy + (ash - gh) / 2 + (i / per) * (ch + 20); *w = cw; *h = ch;
 }
 static void snap_frac(Win *w, float fx, float fy, float fw, float fh, const char *name) {
-    float W = SCR_W - 2 * GAP, H = WORK_Y1 - WORK_Y0 - 2 * GAP;
+    float bottom = work_bottom();
+    float W = SCR_W - 2 * GAP, H = bottom - WORK_Y0 - 2 * GAP;
     float x = GAP + fx * W, y = WORK_Y0 + GAP + fy * H, ww = fw * W, hh = fh * H;
     if (fx > 0) { x += GAP / 2; ww -= GAP / 2; }
     if (fx + fw < 0.999f) ww -= GAP / 2;
@@ -249,6 +260,13 @@ void wm_client(Win *w) {
             sync();
             exit(m.a ? 42 : 43);
         case M_RECENT: recent_add(m.s); break;
+        case M_SET_DOCK:
+            dock_autohide = m.a;
+            settings_save();
+            wm_update_dock_autohide();
+            dirty = 1;
+            MARK("DOCK autohide=%d", dock_autohide);
+            break;
         }
     }
     if (w->fd >= 0 && r == 0) gone(w);
@@ -598,20 +616,6 @@ static void draw_flyout(Canvas *c) {
 typedef struct { Canvas c; } Band;
 static void compose_band(Canvas *c) {
     g_buf(c, wall->px, SCR_W, SCR_W, SCR_H, 0, 0, SCR_W, SCR_H, 0, 0, 255, 1);
-    // FLX OS central desktop watermark (matches reference)
-    icon_logo(c, SCR_W * 0.38f, SCR_H * 0.22f, 72, 210);
-    text_c(c, F_BOLD, 36, 0.5f, SCR_W * 0.38f, SCR_H * 0.22f + 56, 0xE0F2F5F4, "FLX OS");
-    text_c(c, F_REG, 15, 0.2f, SCR_W * 0.38f, SCR_H * 0.22f + 82, 0xD0F5AD32, "Plus qu'un syst\u00e8me. Une vision.");
-    // Bottom-left brand
-    icon_logo(c, 24, SCR_H - 30, 26, 240);
-    text(c, F_BOLD, 14, 0.5f, 44, SCR_H - 32, 0xFFF2F5F4, "FLX OS");
-    text(c, F_REG, 11, 0, 44, SCR_H - 18, 0xFF94A6AA, "Par Florynx Labs");
-    // Bottom-right motto + Mali flag
-    text_r(c, F_REG, 12, 0, SCR_W - 55, SCR_H - 24, 0xFF94A6AA, "Simple. Rapide. Local. \u2022 Mali");
-    g_rect(c, SCR_W - 48, SCR_H - 33, 8, 15, 0xFF14B53A);
-    g_rect(c, SCR_W - 40, SCR_H - 33, 8, 15, 0xFFFCD116);
-    g_rect(c, SCR_W - 32, SCR_H - 33, 8, 15, 0xFFCE1126);
-    g_rrect_line(c, SCR_W - 48, SCR_H - 33, 24, 15, 2, 1, 0x40FFFFFF);
     if (snap_prev) {   // drag-to-edge preview behind the dragged window: tinted blurred wallpaper (no live read)
         float r = snap_prev == 3 ? 0 : 8;
         mica_under(c, spx, spy, spw, sph, r, r, 255);

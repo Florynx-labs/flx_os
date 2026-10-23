@@ -6,7 +6,6 @@
 # Environment variables:
 #   FLX_ARCH=x86_64|arm64   force target architecture (auto-detected by default)
 #   FLX_DISPLAY=gtk|sdl|vnc|none|cocoa  (default: gtk on Linux, cocoa on macOS)
-#   FLX_NO_BRIDGE=1          disable the Copilot bridge
 #   FLX_DISK=path.img        use a custom persistent disk image
 #   FLX_QMP=/tmp/flx-qmp.sock  (fixed path used by test harness)
 set -e
@@ -34,17 +33,7 @@ fi
 DISK="${FLX_DISK:-data/disk.img}"
 [ -f "$DISK" ] || { echo "Creating $DISK"; cp build/home.img "$DISK"; }
 
-# 3. Copilot/AI bridge (127.0.0.1; guest reaches it as 10.0.2.2:8766)
-BRIDGE=""
-if [ -z "$FLX_NO_BRIDGE" ]; then
-  python3 bridge/copilot_bridge > build/bridge.log 2>&1 &
-  BRIDGE=$!
-fi
-QMP="${FLX_QMP:-/tmp/flx-qmp.sock}"
-cleanup() { [ -n "$BRIDGE" ] && kill "$BRIDGE" 2>/dev/null; rm -f "$QMP"; }
-trap cleanup EXIT INT TERM
-
-# 4. QEMU flags — choose acceleration, machine and display by OS + arch
+# 3. QEMU flags — choose acceleration, machine and display by OS + arch
 OS="$(uname -s)"
 if [ "$OS" = "Darwin" ]; then
   # macOS: HVF for both arm64 and x86_64

@@ -122,10 +122,17 @@ static void draw(Canvas *c) {
     g_rrect(c, 10, 6, 200, TABH - 6, 7, 0, 0xFF060A0C);
     g_rrect_line(c, 10, 6, 200, TABH - 6, 7, 1, 0x28F5AD32);
     icon_app(c, APP_TERMINAL, 20, 13, 18);
-    text(c, F_REG, 13, 0, 46, 28, 0xFFF2F5F4, "flx@flx-os");
+    text(c, F_REG, 13, 0, 46, 28, 0xFFF2F5F4, "flx@flx-os: ~");
     icon_glyph(c, G_CLOSE, 192, 22, 9, 0xFF9A9A9A);
     icon_glyph(c, G_PLUS, 232, 22, 12, 0xFF9A9A9A);
     if (ui_click(220, 6, 26, 28)) app_launch("terminal", 0);
+    // Right action buttons (command palette and settings)
+    float rx = U.w - 80;
+    ui_card(rx, 6, 32, 26);
+    icon_glyph(c, G_APPS, rx + 16, 19, 14, 0xFF94A6AA);
+    ui_card(rx + 38, 6, 32, 26);
+    icon_glyph(c, G_GEAR, rx + 54, 19, 14, 0xFF94A6AA);
+    if (ui_click(rx + 38, 6, 32, 26)) app_launch("settings", 0);
     if (U.ev == EV_WHEEL) { view_off = mini(total_lines, maxi(0, view_off + (int)(U.wheel * 3))); }
     if (U.ev == EV_KEY) {
         int k = U.key, m = U.mods;

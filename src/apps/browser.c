@@ -359,9 +359,13 @@ static int editing, addr_sel, last_ver = -1;
 static char addr[2048];
 static char hover_url[512];
 static const char *QUICK[][2] = {
-    { "Wikipedia", "https://en.m.wikipedia.org/wiki/Microsoft_Windows" }, { "Hacker News", "https://news.ycombinator.com/" },
-    { "example.com", "https://example.com/" }, { "CNN Lite", "https://lite.cnn.com/" },
-    { "NPR Text", "https://text.npr.org/" }, { "DuckDuckGo Lite", "https://lite.duckduckgo.com/lite/" } };
+    { "FLX OS Docs", "https://github.com/Florynx-labs" },
+    { "Wikipédia", "https://fr.m.wikipedia.org/wiki/Syst%C3%A8me_d%27exploitation" },
+    { "Hacker News", "https://news.ycombinator.com/" },
+    { "Météo Direct", "https://open-meteo.com/" },
+    { "FLX Store", "https://florynx.dev/store" },
+    { "DuckDuckGo", "https://lite.duckduckgo.com/lite/" }
+};
 
 static void draw_page(Canvas *c, Tab *t) {
     float top = TOP, bot = U.h, W = U.w;
@@ -426,14 +430,15 @@ static void draw_page(Canvas *c, Tab *t) {
 
 static void draw_start(Canvas *c) {
     float W = U.w, H = U.h, top = TOP;
-    g_vgrad(c, 0, top, W, H - top, 0, TH.dark ? 0xFF1C2230 : 0xFFEAF1FB, TH.dark ? 0xFF14161C : 0xFFF7F7F9);
-    icon_app(c, APP_BROWSER, W / 2 - 36, top + 70, 72);
-    text_c(c, F_SEMI, 30, 0, W / 2, top + 186, TH.text, "Where to today?");
-    float sw = fminf(640, W - 80), sx = (W - sw) / 2, sy = top + 216;
+    g_vgrad(c, 0, top, W, H - top, 0, TH.dark ? 0xFF0B1418 : 0xFFEAF1FB, TH.dark ? 0xFF050A0D : 0xFFF7F7F9);
+    icon_logo(c, W / 2, top + 75, 72, 255);
+    text_c(c, F_BOLD, 28, 0, W / 2, top + 170, TH.text, "Où souhaitez-vous aller aujourd'hui ?");
+    float sw = fminf(640, W - 80), sx = (W - sw) / 2, sy = top + 205;
     g_shadow(c, sx, sy, sw, 50, 25, 18, 50, 4);
-    g_rrect(c, sx, sy, sw, 50, 25, 25, TH.dark ? 0xFF2A2D35 : 0xFFFFFFFF);
+    g_rrect(c, sx, sy, sw, 50, 25, 25, TH.dark ? 0xFF142028 : 0xFFFFFFFF);
+    g_rrect_line(c, sx, sy, sw, 50, 25, 1.5f, TH.dark ? 0xFF2A3D48 : 0xFFD0D7DE);
     icon_glyph(c, G_SEARCH, sx + 28, sy + 25, 18, TH.sub);
-    text(c, F_REG, 16, 0, sx + 50, sy + 31, TH.dim, "Search DuckDuckGo or type a web address");
+    text(c, F_REG, 15, 0, sx + 50, sy + 31, TH.dim, "Rechercher avec DuckDuckGo ou entrer une URL web...");
     if (ui_click(sx, sy, sw, 50)) { editing = 1; addr[0] = 0; addr_sel = 0; }
     float tw = 150, th = 110, gap = 18;
     int per = mini(6, maxi(1, (int)((W - 80) / (tw + gap))));
@@ -441,8 +446,8 @@ static void draw_start(Canvas *c) {
     for (int i = 0; i < 6; i++) {
         float x = gx + (i % per) * (tw + gap), y = sy + 90 + (i / per) * (th + gap);
         bool h = ui_hover(x, y, tw, th);
-        g_rrect(c, x, y, tw, th, 10, 10, h ? (TH.dark ? 0xFF323640 : 0xFFFFFFFF) : (TH.dark ? 0xFF262A32 : 0xD8FFFFFF));
-        g_rrect_line(c, x, y, tw, th, 10, 1, TH.line);
+        g_rrect(c, x, y, tw, th, 12, 12, h ? (TH.dark ? 0xFF182830 : 0xFFFFFFFF) : (TH.dark ? 0xFF101B22 : 0xD8FFFFFF));
+        g_rrect_line(c, x, y, tw, th, 12, 1.2f, h ? TH.accent : TH.line);
         uint32_t col = ACCENTS[i % NACCENT];
         g_circle(c, x + tw / 2, y + 40, 22, col);
         char ch[2] = { QUICK[i][0][0], 0 };
@@ -451,7 +456,7 @@ static void draw_start(Canvas *c) {
         text_c(c, F_REG, 13, 0, x + tw / 2, y + 90, TH.text, t); free(t);
         if (ui_click(x, y, tw, th)) navigate(tabs[0], QUICK[i][1], 0, 0);
     }
-    text_c(c, F_REG, 13, 0, W / 2, H - 24, TH.dim, "Own HTML tokenizer, CSS cascade and layout · HTTPS via BearSSL · no JavaScript");
+    text_c(c, F_REG, 13, 0, W / 2, H - 24, TH.dim, "Navigateur Web FLX · HTML5 & CSS · Sécurisé via BearSSL · Zéro télémétrie");
 }
 
 static void page_click(Tab *t) {

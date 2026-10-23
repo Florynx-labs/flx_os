@@ -1,0 +1,9 @@
+[package]
+name = "flx-taskmgr"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+flx-core = { path = "../flx-core" }
+[[bin]]
+name = "taskmgr"
+path = "src/main.rs"

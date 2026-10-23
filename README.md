@@ -10,9 +10,10 @@
 ## Présentation
 
 FLX OS est un système d'exploitation expérimental construit **de zéro** au-dessus du kernel Linux.
-Tout ce qui s'exécute au-dessus de Linux — compositeur, gestionnaire de fenêtres, bibliothèque
-graphique, shell, et chaque application — a été écrit en C pur, sans aucune dépendance externe
-(pas de glibc, pas de libstdc++, pas de Gtk, pas de Qt, pas d'Electron).
+Le compositeur, le gestionnaire de fenêtres, la bibliothèque graphique, le shell et la plupart des
+applications sont écrits en C. File Explorer et Task Manager sont désormais des applications Rust
+natives et réutilisent l'ABI C existante de libflxui. Les applications Rust n'ajoutent aucune crate tierce;
+les exécutables restent liés statiquement à musl (pas de glibc, Gtk, Qt ni Electron).
 
 L'interface est rendue pixel par pixel par notre propre rasteriseur, basé sur le travail de
 Lumen OS 2 (MIT, Jakub Dostál).
@@ -23,7 +24,7 @@ Lumen OS 2 (MIT, Jakub Dostál).
 │  ┌──────────────────────────────────────┐   │
 │  │  Compositeur + WM        (src/comp/) │   │
 │  │  Shell + Start menu      (src/sh/)   │   │
-│  │  Applications            (src/apps/) │   │
+│  │  Apps C/Rust       (src/apps/, src/rust/) │   │
 │  │  libflxui                (src/lib/)  │   │
 │  │  Pile réseau + TLS       (src/net/)  │   │
 │  └──────────────────────────────────────┘   │
@@ -145,7 +146,7 @@ scripts/verify_no_toolkits.sh build/
 
 ```
 flx-os/
-├── src/          # Code source de l'OS (C, musl statique)
+├── src/          # Code source de l'OS (C et Rust, musl statique)
 │   ├── comp/     # Compositeur + WM + shell graphique
 │   ├── lib/      # libflxui : rasteriseur, texte, thème, icons, IPC
 │   ├── sh/       # Shell FLX (flxsh)

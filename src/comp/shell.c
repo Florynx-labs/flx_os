@@ -2,14 +2,19 @@
 // floating glass taskbar, top status bar, Start/Launcher menu, Quick Settings panel
 // and the Alt+Tab switcher. Settings persist on the home disk.
 #include "comp.h"
+#include "auth_client.h"
 #include <unistd.h>
 
 int phase = PH_BOOT, dirty = 1;
-int start_open, widgets_open, copilot_open, alttab_open;
-float start_p, widgets_p, copilot_p;
+int start_open, widgets_open, alttab_open, clock_flyout_open;
+float start_p, widgets_p, clock_flyout_p;
 int hover_id = -1;
 static double boot_t0, unlock_t = -1, lock_shown_t;
-static float lock_drag; static float lock_y0; static int lock_down;
+static float lock_drag; static float lock_x0; static int lock_down;
+static int lock_power_open;
+enum { H_LOCK_SHUT = 210, H_LOCK_RESTART, H_LOCK_SLEEP, H_LOCK_USER, H_LOCK_SUBMIT };
+static int auth_status = -1, auth_dialog, auth_confirm;
+static char auth_password[257], auth_first[257], auth_message[112];
 static char query[128];
 static int power_menu, all_apps, qs_open, dm_open; static float dm_x, dm_y, qs_vol = 0.7f, qs_bright = 1.0f; static int qs_drag;
 static int super_alone;
@@ -18,6 +23,10 @@ static char recent[8][256]; static int nrecent;
 static int start_marked;
 static double tip_t; static int tip_id = -1;
 
+int dock_autohide = 0;
+static float dock_p = 1.0f;
+static int dock_revealed = 1;
+
 #define TOP 36
 #define TBH 56
 #define TBY (SCR_H - 12 - TBH)
@@ -25,11 +34,12 @@ static double tip_t; static int tip_id = -1;
 #define SM_H 700
 #define SM_X ((SCR_W - SM_W) / 2)
 #define SM_Y (TBY - 12 - SM_H)
-static const char *PINNED[] = { "explorer", "browser", "terminal", "settings", "taskmgr", "calc", "minesweeper", "proof" };
+static const char *PINNED[] = { "explorer", "browser", "terminal", "settings", "taskmgr", "store", "calc", "notepad" };
 #define NPIN 8
 enum {
-    H_NONE, H_START_BTN, H_SEARCH_BTN, H_WIDGETS_BTN, H_COPILOT_BTN, H_TOP_SEARCH, H_NET, H_CLOCK, H_VOL,
+    H_NONE, H_START_BTN, H_SEARCH_BTN, H_WIDGETS_BTN, H_TOP_SEARCH, H_NET, H_CLOCK, H_VOL,
     H_START_PANEL, H_START_SEARCH, H_POWER, H_PWR_LOCK, H_PWR_RESTART, H_PWR_SHUT, H_USER, H_ALLAPPS,
+    H_CLOCK_PANEL = 18,
     H_QS_PANEL = 20, H_QS_NET, H_QS_DARK, H_QS_ACCENT, H_QS_WALL, H_QS_LOCK, H_QS_SETTINGS, H_QS_VOL, H_QS_BRIGHT, H_QS_GEAR,
     H_DM_PANEL = 35, H_DM_PERSONAL, H_DM_DISPLAY, H_DM_TERMINAL, H_DM_REFRESH,
     H_TB_APP = 50, H_START_APP = 80, H_RESULT = 100, H_RECENT = 130,
@@ -46,16 +56,31 @@ int hit_at(float x, float y) {
 
 // ---- settings & recent files ------------------------------------------------------------------------
 void settings_save(void) {
-    char *s = strfmt("dark=%d\naccent=%d\nwall=%d\n", TH.dark, TH.accent_i, TH.wall);
+    char *s = strfmt("dark=%d\naccent=%d\nwall=%d\nautohide=%d\n", TH.dark, TH.accent_i, TH.wall, dock_autohide);
     write_file("/home/.config/flx.conf", s, strlen(s));
     free(s);
+    char ds[32]; snprintf(ds, sizeof ds, "autohide=%d\n", dock_autohide);
+    write_file("/home/.config/dock.conf", ds, strlen(ds));
     sync();
 }
 static void settings_load(void) {
     int d = 1, a = 0, w = 0;  // FLX OS defaults: dark mode, gold accent, sunset city
     char *s = read_file("/home/.config/flx.conf", 0);
     if (!s) s = read_file("/home/.config/w12.conf", 0);  // backward compat
-    if (s) { char *p; if ((p = strstr(s, "dark="))) d = atoi(p + 5); if ((p = strstr(s, "accent="))) a = atoi(p + 7); if ((p = strstr(s, "wall="))) w = atoi(p + 5); free(s); }
+    if (s) {
+        char *p;
+        if ((p = strstr(s, "dark="))) d = atoi(p + 5);
+        if ((p = strstr(s, "accent="))) a = atoi(p + 7);
+        if ((p = strstr(s, "wall="))) w = atoi(p + 5);
+        if ((p = strstr(s, "autohide="))) dock_autohide = atoi(p + 9);
+        free(s);
+    }
+    char *ds = read_file("/home/.config/dock.conf", 0);
+    if (ds) {
+        char *p = strstr(ds, "autohide=");
+        if (p) dock_autohide = atoi(p + 9);
+        free(ds);
+    }
     theme_set(d, a, w);
 }
 static void recent_load(void) {
@@ -98,15 +123,47 @@ void shell_init(void) {
     settings_load();
     load_wallpaper();
     recent_load();
+    auth_status = flx_auth_status();
+    if (auth_status < 0) snprintf(auth_message, sizeof auth_message, "Service d’authentification indisponible.");
     boot_t0 = now();
     MARK("READY boot");
 }
 
-void lock_now(void) { phase = PH_LOCK; unlock_t = -1; lock_drag = 0; lock_shown_t = now(); close_panels(); dirty = 1; MARK("READY lock"); }
-static void unlock(void) { if (unlock_t < 0) { unlock_t = now(); MARK("UNLOCK"); } }
+void lock_now(void) { phase = PH_LOCK; unlock_t = -1; lock_drag = 0; auth_dialog = auth_confirm = 0; auth_password[0] = auth_first[0] = auth_message[0] = 0; auth_status = flx_auth_status(); lock_shown_t = now(); close_panels(); dirty = 1; MARK("READY lock"); }
+static void unlock(void) { if (unlock_t < 0) { auth_dialog = 0; auth_password[0] = auth_first[0] = 0; unlock_t = now(); MARK("UNLOCK authenticated"); } }
+
+static void lock_submit(void) {
+    size_t n = strlen(auth_password);
+    if (auth_status < 0) { snprintf(auth_message, sizeof auth_message, "Service d’authentification indisponible."); return; }
+    if (!n) { snprintf(auth_message, sizeof auth_message, "Saisissez votre mot de passe."); return; }
+    char request[320], response[48];
+    if (auth_status == 0) {
+        if (n < 10) { snprintf(auth_message, sizeof auth_message, "10 caractères minimum."); return; }
+        if (!auth_confirm) {
+            memcpy(auth_first, auth_password, n + 1); auth_password[0] = 0; auth_confirm = 1;
+            snprintf(auth_message, sizeof auth_message, "Confirmez le nouveau mot de passe."); return;
+        }
+        if (strcmp(auth_first, auth_password)) {
+            auth_first[0] = auth_password[0] = 0; auth_confirm = 0;
+            snprintf(auth_message, sizeof auth_message, "Les mots de passe ne correspondent pas."); return;
+        }
+        snprintf(request, sizeof request, "SET %s", auth_password);
+        int ok = !flx_auth_request(request, response, sizeof response) && !strcmp(response, "OK");
+        memset(request, 0, sizeof request); memset(response, 0, sizeof response);
+        if (ok) { auth_status = 1; unlock(); return; }
+        auth_first[0] = auth_password[0] = 0; auth_confirm = 0;
+        snprintf(auth_message, sizeof auth_message, "Création refusée. Réessayez."); return;
+    }
+    snprintf(request, sizeof request, "VERIFY %s", auth_password);
+    int ok = !flx_auth_request(request, response, sizeof response) && !strcmp(response, "OK");
+    memset(request, 0, sizeof request); memset(response, 0, sizeof response);
+    if (ok) { unlock(); return; }
+    auth_password[0] = 0;
+    snprintf(auth_message, sizeof auth_message, "Mot de passe incorrect.");
+}
 void close_panels(void) {
-    if (start_open || widgets_open || copilot_open || qs_open || dm_open) dirty = 1;
-    start_open = widgets_open = copilot_open = 0; power_menu = 0; qs_open = 0; dm_open = 0;
+    if (start_open || widgets_open || qs_open || dm_open || clock_flyout_open) dirty = 1;
+    start_open = widgets_open = clock_flyout_open = 0; power_menu = 0; qs_open = 0; dm_open = 0;
 }
 static void toggle_start(void) {
     int o = !start_open;
@@ -118,8 +175,9 @@ static void toggle_start(void) {
 int shell_animating(void) {
     if (phase == PH_BOOT || unlock_t >= 0) return 1;
     if (phase == PH_LOCK) return 1;   // fade-in + the bobbing unlock hint
-    float ts = start_open, tw = widgets_open, tc = copilot_open;
-    return fabsf(start_p - ts) > 0.001f || fabsf(widgets_p - tw) > 0.001f || fabsf(copilot_p - tc) > 0.001f || copilot_busy;
+    float ts = start_open, tw = widgets_open, tk = clock_flyout_open;
+    float td = (dock_autohide && !dock_revealed && !start_open) ? 0.0f : 1.0f;
+    return fabsf(start_p - ts) > 0.001f || fabsf(widgets_p - tw) > 0.001f || fabsf(clock_flyout_p - tk) > 0.001f || fabsf(dock_p - td) > 0.001f;
 }
 
 void shell_tick(void) {
@@ -128,13 +186,30 @@ void shell_tick(void) {
     float dt = (float)fmin(t - last, 0.05); last = t;
     float k = dt / 0.25f;   // panel slides: 250 ms (reads well on 30 fps video)
 #define STEP(p, tgt) do { float T_ = (tgt); if (p < T_) p = fminf(T_, p + k); else p = fmaxf(T_, p - k); } while (0)
-    float before = start_p + widgets_p + copilot_p;
+    float before = start_p + widgets_p + dock_p + clock_flyout_p;
     STEP(start_p, start_open);
     STEP(widgets_p, widgets_open);
-    STEP(copilot_p, copilot_open);
-    if (start_p + widgets_p + copilot_p != before) dirty = 1;
+    STEP(clock_flyout_p, clock_flyout_open);
+
+    float dock_target = 1.0f;
+    if (dock_autohide) {
+        if (mouse_y >= SCR_H - 14 || (mouse_y >= TBY - 10 && hover_id >= H_START_BTN && hover_id <= H_TB_APP + 20) || start_open) {
+            dock_revealed = 1;
+        } else if (mouse_y < TBY - 30 && !start_open) {
+            dock_revealed = 0;
+        }
+        dock_target = dock_revealed ? 1.0f : 0.0f;
+    } else {
+        dock_revealed = 1;
+        dock_target = 1.0f;
+    }
+    STEP(dock_p, dock_target);
+
+    if (start_p + widgets_p + dock_p + clock_flyout_p != before) dirty = 1;
     if (phase == PH_BOOT && t - boot_t0 > 3.0) { phase = PH_LOCK; lock_shown_t = t; MARK("READY lock"); dirty = 1; }
     if (phase == PH_LOCK && unlock_t >= 0 && t - unlock_t > 0.42) { phase = PH_DESK; unlock_t = -1; lock_drag = 0; MARK("READY desktop"); dirty = 1; }
+    static double auth_retry;
+    if (phase == PH_LOCK && auth_status < 0 && t - auth_retry > 1.0) { auth_retry = t; auth_status = flx_auth_status(); dirty = 1; }
     if (wall_loaded != TH.wall) { load_wallpaper(); dirty = 1; }
     static int last_min = -1;
     time_t tt = time(0);
@@ -166,19 +241,32 @@ static void glass_panel(Canvas *c, float x, float y, float w, float h, float r, 
 static void clock_strings(char *hm, int n1, char *date, int n2, char *dshort, int n3) {
     time_t tt = time(0);
     struct tm tm; localtime_r(&tt, &tm);
-    static const char *DAYS[] = { "Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam" };
-    static const char *MON[]  = { "Janv.", "F\u00e9vr.", "Mars", "Avr.", "Mai", "Juin", "Juil.", "Ao\u00fbt", "Sept.", "Oct.", "Nov.", "D\u00e9c." };
+    static const char *DAYS[] = { "Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi" };
+    static const char *MON[]  = { "Janvier", "F\u00e9vrier", "Mars", "Avril", "Mai", "Juin", "Juillet", "Ao\u00fbt", "Septembre", "Octobre", "Novembre", "D\u00e9cembre" };
+    static const char *DAYS_SHORT[] = { "Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam" };
+    static const char *MON_SHORT[]  = { "Janv.", "F\u00e9vr.", "Mars", "Avr.", "Mai", "Juin", "Juil.", "Ao\u00fbt", "Sept.", "Oct.", "Nov.", "D\u00e9c." };
     if (hm) snprintf(hm, n1, "%d:%02d", tm.tm_hour, tm.tm_min);
     if (date) snprintf(date, n2, "%s %d %s %d", DAYS[tm.tm_wday], tm.tm_mday, MON[tm.tm_mon], tm.tm_year + 1900);
-    if (dshort) snprintf(dshort, n3, "%d/%d/%d", tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900);
+    if (dshort) snprintf(dshort, n3, "%s %d %s %d", DAYS_SHORT[tm.tm_wday], tm.tm_mday, MON_SHORT[tm.tm_mon], tm.tm_year + 1900);
 }
 
-// ---- boot ------------------------------------------------------------------------------------------
+static Image *boot_logo = NULL;
+static int boot_logo_tried = 0;
+
 static void draw_boot(Canvas *c, float alpha) {
     double t = now() - boot_t0;
     g_rect(c, 0, 0, SCR_W, SCR_H, c_alpha(0xFF000000, alpha));
     float la = clampf((float)t / 0.6f, 0, 1) * alpha;
-    icon_logo(c, SCR_W / 2, SCR_H / 2 - 70, 150, (int)(255 * la));
+    if (!boot_logo_tried) {
+        boot_logo = image_load("/share/icons/flx_logo_mark.png");
+        if (!boot_logo) boot_logo = image_load("/share/icons/flx_os_logo.png");
+        boot_logo_tried = 1;
+    }
+    if (boot_logo) {
+        g_image(c, boot_logo, SCR_W / 2 - 90, SCR_H / 2 - 160, 180, 180, 0, (int)(255 * la));
+    } else {
+        icon_logo(c, SCR_W / 2, SCR_H / 2 - 70, 150, (int)(255 * la));
+    }
     // Windows-style loading dots: five dots chasing around a circle, slow at the top
     float cx = SCR_W / 2, cy = SCR_H / 2 + 150, R = 26;
     for (int i = 0; i < 5; i++) {
@@ -194,35 +282,54 @@ static void draw_boot(Canvas *c, float alpha) {
 
 // ---- lock ------------------------------------------------------------------------------------------
 static void draw_lock(Canvas *c) {
-    float off = 0;
-    if (unlock_t >= 0) off = -SCR_H * ease_inout((float)(now() - unlock_t) / 0.42f);
-    else off = -lock_drag;
-    int oy = (int)off;
-    // blurred wallpaper slides up as a sheet
-    int y0 = maxi(0, oy), y1 = mini(SCR_H, SCR_H + oy);
-    if (y1 <= y0) return;
-    g_buf(c, wall_blur->px + (size_t)(y0 - oy) * SCR_W, SCR_W, SCR_W, y1 - y0, 0, y0, SCR_W, y1 - y0, 0, 0, 255, 1);
-    g_rect(c, 0, y0, SCR_W, y1 - y0, 0x30000000);
-    char hm[16], date[64];
-    clock_strings(hm, sizeof hm, date, sizeof date, 0, 0);
+    float slide = unlock_t >= 0 ? SCR_H * ease_inout((float)(now() - unlock_t) / 0.42f) : 0;
+    g_buf(c, wall->px, SCR_W, SCR_W, SCR_H, 0, -(int)slide, SCR_W, SCR_H, 0, 0, 255, 1);
+    g_rect(c, 0, 0, SCR_W, SCR_H, 0x18000000);
+    char hm[16], date[64]; clock_strings(hm, sizeof hm, date, sizeof date, 0, 0);
     float fade = clampf((float)(now() - lock_shown_t) / 0.5f, 0, 1);
-    uint32_t wc = c_alpha(0xFFFFFFFF, fade);
-    text_c(c, F_SEMI, 150, 0, SCR_W / 2, 330 + oy, wc, hm);
-    text_c(c, F_SEMILIGHT, 34, 0, SCR_W / 2, 395 + oy, wc, date);
-    if (weather.ok) {
-        char w[64];
-        snprintf(w, sizeof w, "%.0f°C  %s · %s", weather.temp, weather.cond, weather.place);
-        float tw = text_w(F_REG, 20, 0, w);
-        icon_glyph(c, weather_glyph(weather.code), SCR_W / 2 - tw / 2 - 18, 442 + oy, 22, wc);
-        text(c, F_REG, 20, 0, SCR_W / 2 - tw / 2 + 6, 449 + oy, wc, w);
-    }
-    // bottom hint
-    float bob = sinf((float)now() * 3) * 3;
-    icon_glyph(c, G_CHEV_U, SCR_W / 2, SCR_H - 112 + oy + bob, 26, c_alpha(0xFFFFFFFF, 0.9f * fade));
-    text_c(c, F_REG, 17, 0, SCR_W / 2, SCR_H - 76 + oy, c_alpha(0xFFFFFFFF, 0.85f * fade), "Click, press Enter or swipe up to unlock");
+    uint32_t white = c_alpha(0xFFF4F5F6, fade), gold = c_alpha(TH.accent, fade);
+    // Compact system status: only report Wi-Fi from the network service; battery is omitted
+    // on systems where no readable power-supply device is present.
     NetInfo ni; netinfo_read(&ni);
-    icon_glyph(c, ni.up ? G_WIFI : G_WIFI_OFF, SCR_W - 110, SCR_H - 50 + oy, 22, wc);
-    icon_glyph(c, G_BATTERY, SCR_W - 64, SCR_H - 50 + oy, 24, wc);
+    icon_glyph(c, ni.up ? G_WIFI : G_WIFI_OFF, SCR_W - 96, 30, 20, white);
+    FILE *bf = fopen("/sys/class/power_supply/BAT0/capacity", "r"); int pct = -1;
+    if (bf) { if (fscanf(bf, "%d", &pct) != 1 || pct < 0 || pct > 100) pct = -1; fclose(bf); }
+    if (pct >= 0) { char b[16]; snprintf(b, sizeof b, "%d%%", pct); icon_glyph(c, G_BATTERY, SCR_W - 54, 30, 19, white); text(c, F_REG, 12, 0, SCR_W - 34, 34, white, b); }
+
+    text_c(c, F_LIGHT, SCR_H * 0.105f, 0, SCR_W / 2, SCR_H * 0.30f, white, hm);
+    text_c(c, F_SEMILIGHT, 25, 0, SCR_W / 2, SCR_H * 0.355f, white, date);
+    text_c(c, F_REG, 17, 0, SCR_W / 2, SCR_H * 0.405f, c_alpha(0xFFD7D9DC, fade), "« Les grandes choses naissent d'une vision claire. »");
+    text_c(c, F_SEMI, 14, 0, SCR_W / 2, SCR_H * 0.438f, gold, "— FLX OS —");
+
+    float sw = fminf(390, SCR_W - 48), sh = 76, sx = (SCR_W - sw) / 2, sy = SCR_H * 0.79f;
+    float travel = sw - sh, dx = fminf(lock_drag, travel);
+    g_rrect(c, sx, sy, sw, sh, sh/2, sh/2, 0xB910171C);
+    g_rrect_line(c, sx, sy, sw, sh, sh/2, 1, 0x5085A0A8);
+    g_circle(c, sx + sh/2 + dx, sy + sh/2, sh/2 - 4, 0xFF10191D);
+    g_ring(c, sx + sh/2 + dx, sy + sh/2, sh/2 - 4, 2, gold);
+    icon_glyph(c, G_LOCK, sx + sh/2 + dx, sy + sh/2, 24, gold);
+    text_c(c, F_REG, 16, 0, SCR_W/2 + 28, sy + 43, white, "Faire glisser pour déverrouiller");
+    icon_glyph(c, G_CHEV_R, sx + sw - 28, sy + sh/2, 20, white);
+    hit_add(H_POWER, SCR_W - 56, 8, 42, 42);
+    icon_glyph(c, G_POWER, SCR_W - 35, 29, 20, white);
+    if (lock_power_open) {
+        float mw = 230, mh = 132, mx = SCR_W - mw - 18, my = 58;
+        g_rrect(c, mx, my, mw, mh, 12, 12, 0xEA11191D);
+        const char *items[] = { "Éteindre", "Redémarrer", "Veille indisponible", "Changer d’utilisateur indisponible" };
+        int ids[] = { H_LOCK_SHUT, H_LOCK_RESTART, H_LOCK_SLEEP, H_LOCK_USER };
+        for (int i=0;i<4;i++) { float yy=my+8+i*29; hit_add(ids[i],mx,yy,mw,29); text(c,F_REG,13,0,mx+14,yy+19,white,items[i]); }
+    }
+    if (auth_dialog) {
+        float dw=fminf(420, SCR_W-40), dh=auth_status==0 ? 276 : 244, dx=(SCR_W-dw)/2, dy=(SCR_H-dh)/2;
+        g_rrect(c,dx,dy,dw,dh,16,16,0xF20A1419); g_rrect_line(c,dx,dy,dw,dh,16,1,0x5085A0A8);
+        text(c,F_SEMI,22,0,dx+28,dy+42,white,auth_status==0 ? (auth_confirm ? "Confirmer le mot de passe" : "Créer votre mot de passe") : "Déverrouiller FLX OS");
+        text(c,F_REG,13,0,dx+28,dy+70,0xFFB7C5CA,auth_status==0 ? "Première connexion · 10 caractères minimum" : "Compte local · saisissez votre mot de passe");
+        float fy=dy+96; g_rrect(c,dx+24,fy,dw-48,52,8,8,0xFF101F25); g_rrect_line(c,dx+24,fy,dw-48,52,8,1,TH.accent);
+        text(c,F_REG,16,0,dx+40,fy+32,white,auth_password[0] ? "••••••••••••" : "Mot de passe");
+        if(auth_message[0]) text(c,F_REG,12,0,dx+28,dy+177,auth_status==0 ? TH.accent : 0xFFFF8C82,auth_message);
+        float by=dy+dh-56; hit_add(H_LOCK_SUBMIT,dx+24,by,dw-48,40); g_rrect(c,dx+24,by,dw-48,40,8,8,TH.accent); text_c(c,F_SEMI,14,0,SCR_W/2,by+25,0xFF171411,auth_status==0 ? (auth_confirm ? "Enregistrer" : "Continuer") : "Déverrouiller");
+        text_c(c,F_REG,11,0,SCR_W/2,dy+dh-8,0xFF92A4AB,"Entrée pour valider · Échap pour annuler");
+    }
 }
 
 // ---- top bar -----------------------------------------------------------------------------------------
@@ -242,17 +349,15 @@ static void draw_topbar(Canvas *c) {
     g_rrect_line(c, sx, 4, sw, 28, 14, 1, TH.dark ? 0x18FFFFFF : 0x14000000);
     icon_glyph(c, G_SEARCH, sx + 20, 18, 14, TH.sub);
     label(c, F_REG, 13, sx + 36, 4, 28, TH.sub, "Rechercher...");
-    // right: network, battery, clock, copilot
+    // right: network, battery and clock
     NetInfo ni; netinfo_read(&ni);
     float rx = SCR_W - 10;
-    rx -= 40; hit_add(H_COPILOT_BTN, rx, 3, 34, 30);
-    if (hover_id == H_COPILOT_BTN || copilot_open) g_rrect(c, rx, 3, 34, 30, 6, 6, TH.hover);
-    icon_copilot(c, rx + 17, 18, 20);
+    rx -= 40;
     char hm[16], ds[32];
     clock_strings(hm, sizeof hm, 0, 0, ds, sizeof ds);
     float wt = text_w(F_SEMI, 13, 0, hm), wd = text_w(F_REG, 13, 0, ds), tw = wt + wd + 32;
     rx -= tw + 6; hit_add(H_CLOCK, rx, 3, tw, 30);
-    if (hover_id == H_CLOCK) g_rrect(c, rx, 3, tw, 30, 6, 6, TH.hover);
+    if (hover_id == H_CLOCK || clock_flyout_open) g_rrect(c, rx, 3, tw, 30, 6, 6, TH.hover);
     text(c, F_REG, 13, 0, rx + 12, 22, TH.sub, ds);
     text(c, F_SEMI, 13, 0, rx + 20 + wd, 22, fg, hm);
     rx -= 4;
@@ -288,7 +393,12 @@ static int running(const char *exe, int *focused, int *count) {
 static void draw_taskbar(Canvas *c) {
     Slot s[16];
     int n = slots(s);
-    float slot = 52, w = 20 + (n + 2) * slot + 14, x = (SCR_W - w) / 2, y = TBY;
+    float slot = 52, w = 20 + (n + 2) * slot + 14, x = (SCR_W - w) / 2;
+    float y = lerpf(SCR_H + 10, TBY, ease_out(dock_p));
+    if (dock_autohide && dock_p < 0.02f) {
+        hit_add(H_START_BTN, (SCR_W - w) / 2, SCR_H - 12, w, 12);
+        return;
+    }
     glass_panel(c, x, y, w, TBH, 14, 1);
     float ix = x + 10;
     // start
@@ -379,11 +489,11 @@ static void draw_start(Canvas *c) {
             }
         }
     } else {
-        text(c, F_SEMI, 15, 0, x + 40, y + 106, fg, all_apps ? "All apps" : "Pinned");
+        text(c, F_SEMI, 15, 0, x + 40, y + 106, fg, all_apps ? "Toutes les apps" : "\u00c9pingl\u00e9es");
         hit_add(H_ALLAPPS, x + SM_W - 130, y + 88, 96, 26);
         g_rrect(c, x + SM_W - 130, y + 88, 96, 26, 5, 5, hover_id == H_ALLAPPS ? TH.hover : (TH.dark ? 0x18FFFFFF : 0x70FFFFFF));
-        if (all_apps) { icon_glyph(c, G_CHEV_L, x + SM_W - 116, y + 101, 12, fg); text(c, F_REG, 13, 0, x + SM_W - 100, y + 106, fg, "Back"); }
-        else { text(c, F_REG, 13, 0, x + SM_W - 118, y + 106, fg, "All apps"); icon_glyph(c, G_CHEV_R, x + SM_W - 48, y + 101, 12, fg); }
+        if (all_apps) { icon_glyph(c, G_CHEV_L, x + SM_W - 116, y + 101, 12, fg); text(c, F_REG, 13, 0, x + SM_W - 100, y + 106, fg, "Retour"); }
+        else { text(c, F_REG, 13, 0, x + SM_W - 118, y + 106, fg, "Toutes"); icon_glyph(c, G_CHEV_R, x + SM_W - 48, y + 101, 12, fg); }
       if (all_apps) {
         int order[NAPPS];
         for (int i = 0; i < NAPPS; i++) order[i] = i;
@@ -419,8 +529,8 @@ static void draw_start(Canvas *c) {
       }
       if (!all_apps) {
         float ry0 = y + 340;
-        text(c, F_SEMI, 15, 0, x + 40, ry0, fg, "Recommended");
-        if (!nrecent) text(c, F_REG, 13, 0, x + 40, ry0 + 36, sub, "Files you open in Notepad and File Explorer show up here.");
+        text(c, F_SEMI, 15, 0, x + 40, ry0, fg, "Recommand\u00e9s");
+        if (!nrecent) text(c, F_REG, 13, 0, x + 40, ry0 + 36, sub, "Les fichiers r\u00e9cents appara\u00eetront ici.");
         for (int i = 0; i < nrecent && i < 6; i++) {
             float rx = x + 28 + (i % 2) * ((SM_W - 56) / 2), ry = ry0 + 18 + (i / 2) * 64;
             int id = H_RECENT + i;
@@ -431,7 +541,7 @@ static void draw_start(Canvas *c) {
             char *t = text_ellipsize(F_SEMI, 14, b ? b + 1 : recent[i], (SM_W - 56) / 2 - 80);
             text(c, F_SEMI, 14, 0, rx + 56, ry + 26, fg, t);
             free(t);
-            text(c, F_REG, 12, 0, rx + 56, ry + 44, sub, i == 0 ? "Recently opened" : "Opened earlier");
+            text(c, F_REG, 12, 0, rx + 56, ry + 44, sub, i == 0 ? "R\u00e9cemment ouvert" : "Ouvert r\u00e9cemment");
         }
       }
     }
@@ -441,8 +551,7 @@ static void draw_start(Canvas *c) {
     g_rect(c, x, by, SM_W, 1, TH.dark ? 0x20FFFFFF : 0x18000000);
     hit_add(H_USER, x + 24, by + 12, 180, 44);
     if (hover_id == H_USER) g_rrect(c, x + 24, by + 12, 180, 44, 8, 8, TH.hover);
-    g_circle(c, x + 52, by + 34, 16, TH.accent);
-    text_c(c, F_SEMI, 15, 0, x + 52, by + 40, TH.accent_fg, "F");
+    icon_user_avatar(c, x + 36, by + 18, 32, 16, (int)(255 * a));
     text(c, F_SEMI, 14, 0, x + 78, by + 39, fg, "FLX User");
     hit_add(H_POWER, x + SM_W - 72, by + 12, 44, 44);
     if (hover_id == H_POWER || power_menu) g_rrect(c, x + SM_W - 72, by + 12, 44, 44, 8, 8, TH.hover);
@@ -450,14 +559,14 @@ static void draw_start(Canvas *c) {
     if (power_menu) {
         float mx = x + SM_W - 220, my = by - 140, mw = 200, mh = 132;
         glass_panel(c, mx, my, mw, mh, 8, 1);
-        const char *L[3] = { "Lock", "Restart", "Shut down" };
-        int G[3] = { G_LOCK, G_RESTART, G_POWER };
+        const char *L[3] = { "Verrouiller", "Red\u00e9marrer", "Arr\u00eater" };
+        int G2[3] = { G_LOCK, G_RESTART, G_POWER };
         for (int i = 0; i < 3; i++) {
             int id = H_PWR_LOCK + i;
             float iy = my + 6 + i * 40;
             hit_add(id, mx + 6, iy, mw - 12, 38);
             if (hover_id == id) g_rrect(c, mx + 6, iy, mw - 12, 38, 6, 6, TH.hover);
-            icon_glyph(c, G[i], mx + 26, iy + 19, 16, TH.text);
+            icon_glyph(c, G2[i], mx + 26, iy + 19, 16, TH.text);
             text(c, F_REG, 14, 0, mx + 48, iy + 24, TH.text, L[i]);
         }
     }
@@ -497,12 +606,12 @@ static void draw_quick(Canvas *c) {
     hit_add(H_QS_PANEL, x, y, w, h);
     NetInfo ni; netinfo_read(&ni);
     float tx = x + 16, ty = y + 16;
-    qs_tile(c, H_QS_NET, tx, ty, ni.up ? G_WIFI : G_WIFI_OFF, ni.up ? "Connected" : "Offline", ni.up ? ni.ip : "no DHCP lease", ni.up);
-    qs_tile(c, H_QS_DARK, tx + 120, ty, G_MOON, "Dark mode", TH.dark ? "On" : "Off", TH.dark);
+    qs_tile(c, H_QS_NET, tx, ty, ni.up ? G_WIFI : G_WIFI_OFF, ni.up ? "Connect\u00e9" : "D\u00e9connect\u00e9", ni.up ? ni.ip : "pas de bail DHCP", ni.up);
+    qs_tile(c, H_QS_DARK, tx + 120, ty, G_MOON, "Mode sombre", TH.dark ? "Actif" : "Inactif", TH.dark);
     qs_tile(c, H_QS_ACCENT, tx + 240, ty, G_PALETTE, "Accent", ACCENT_NAMES[TH.accent_i], 0);
-    qs_tile(c, H_QS_WALL, tx, ty + 84, G_DISPLAY, "Wallpaper", WALL_NAMES[TH.wall], 0);
-    qs_tile(c, H_QS_LOCK, tx + 120, ty + 84, G_LOCK, "Lock", "Win+L", 0);
-    qs_tile(c, H_QS_SETTINGS, tx + 240, ty + 84, G_GEAR, "Settings", "All settings", 0);
+    qs_tile(c, H_QS_WALL, tx, ty + 84, G_DISPLAY, "Fond d'\u00e9cran", WALL_NAMES[TH.wall], 0);
+    qs_tile(c, H_QS_LOCK, tx + 120, ty + 84, G_LOCK, "Verrouiller", "Win+L", 0);
+    qs_tile(c, H_QS_SETTINGS, tx + 240, ty + 84, G_GEAR, "Param\u00e8tres", "Tous", 0);
     qs_slider(c, H_QS_BRIGHT, tx, ty + 180, w - 32, G_SUN, qs_bright);
     qs_slider(c, H_QS_VOL, tx, ty + 220, w - 32, G_VOLUME, qs_vol);
     g_rect(c, x, y + h - 52, w, 1, TH.dark ? 0x20FFFFFF : 0x18000000);
@@ -511,7 +620,7 @@ static void draw_quick(Canvas *c) {
 }
 static void draw_desk_menu(Canvas *c) {
     if (!dm_open) return;
-    const char *L[4] = { "Personalize", "Display settings", "Open in Terminal", "Refresh" };
+    const char *L[4] = { "Personnaliser", "Param\u00e8tres d'affichage", "Ouvrir dans le Terminal", "Actualiser" };
     int G[4] = { G_PALETTE, G_DISPLAY, G_APPS, G_REFRESH };
     float w = 230, h = 4 * 38 + 10, x = fminf(dm_x, SCR_W - w - 8), y = fminf(dm_y, SCR_H - h - 8);
     glass_panel(c, x, y, w, h, 8, 1);
@@ -553,6 +662,54 @@ static void draw_alttab(Canvas *c) {
     }
 }
 
+static Image *clock_flyout_landscape = NULL;
+
+static void draw_clock_flyout(Canvas *c) {
+    float p = ease_out(clock_flyout_p);
+    if (p <= 0.01f) return;
+    float fw = 270, fh = 336;
+    float fx = SCR_W - 12 - fw;
+    float fy = TOP + 8 + (1.0f - p) * (-14);
+    float alpha = p;
+
+    // Outer shadow and frosted glass card
+    g_shadow(c, fx, fy, fw, fh, 16, 28, (int)(110 * alpha), 8);
+    g_glass(c, fx, fy, fw, fh, 16, c_alpha(TH.dark ? 0xDC081115 : 0xEFF3F4F7, alpha));
+    g_rrect_line(c, fx, fy, fw, fh, 16, 1.2f, c_alpha(TH.dark ? 0x30FFFFFF : 0x30000000, alpha));
+    g_rrect_line(c, fx + 1, fy + 1, fw - 2, fh - 2, 15, 1.0f, c_alpha(0x18000000, alpha));
+    hit_add(H_CLOCK_PANEL, fx, fy, fw, fh);
+
+    time_t tt = time(0);
+    struct tm tm; localtime_r(&tt, &tm);
+    char hm[16], dstr[64];
+    snprintf(hm, sizeof hm, "%02d:%02d", tm.tm_hour, tm.tm_min);
+
+    static const char *JOURS_FR[] = { "Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi" };
+    static const char *MOIS_FR[]  = { "Janvier", "F\u00e9vrier", "Mars", "Avril", "Mai", "Juin", "Juillet", "Ao\u00fbt", "Septembre", "Octobre", "Novembre", "D\u00e9cembre" };
+    snprintf(dstr, sizeof dstr, "%s %d %s %d", JOURS_FR[tm.tm_wday], tm.tm_mday, MOIS_FR[tm.tm_mon], tm.tm_year + 1900);
+
+    // Time (large, clear, clean light font)
+    text(c, F_LIGHT, 44, 0, fx + 24, fy + 54, c_alpha(TH.text, alpha), hm);
+
+    // Full localized French date
+    text(c, F_REG, 15, 0, fx + 24, fy + 82, c_alpha(TH.sub, alpha), dstr);
+
+    // Philosophy Quote
+    text(c, F_REG, 13, 0, fx + 24, fy + 124, c_alpha(0xFFCBD5E1, alpha), "\u00ab Les grandes choses");
+    text(c, F_REG, 13, 0, fx + 24, fy + 144, c_alpha(0xFFCBD5E1, alpha), "naissent d'une vision claire. \u00bb");
+    text(c, F_SEMI, 12, 0, fx + 24, fy + 172, c_alpha(TH.dim, alpha), "\u2014 FLX OS");
+
+    // Scenic landscape card at bottom
+    float ix = fx + 16, iy = fy + 194, iw = fw - 32, ih = 126;
+    if (!clock_flyout_landscape) clock_flyout_landscape = image_load("/share/icons/card_landscape.png");
+    if (clock_flyout_landscape) {
+        g_image_cover(c, clock_flyout_landscape, ix, iy, iw, ih, 12, (int)(255 * alpha));
+    } else {
+        g_vgrad(c, ix, iy, iw, ih, 12, 0xFF4A2A1A, 0xFF0B141C);
+    }
+    g_rrect_line(c, ix, iy, iw, ih, 12, 1.0f, c_alpha(0x30FFFFFF, alpha));
+}
+
 static void draw_tip(Canvas *c) {
     if (tip_id < H_TB_APP || tip_id >= H_TB_APP + 16 || now() - tip_t < 0.6 || start_open) return;
     Slot s[16];
@@ -573,10 +730,10 @@ void shell_draw(Canvas *c) {
         draw_taskbar(c);
         draw_tip(c);
         widgets_draw(c, widgets_p);
-        copilot_draw(c, copilot_p);
         draw_start(c);
         draw_quick(c);
         draw_desk_menu(c);
+        draw_clock_flyout(c);
         draw_alttab(c);
     }
     if (phase == PH_LOCK) draw_lock(c);
@@ -599,11 +756,26 @@ int shell_mouse(IEv *e) {
     if (phase == PH_BOOT) return 1;
     if (phase == PH_LOCK) {
         if (unlock_t >= 0) return 1;
-        if (e->type == IE_DOWN && e->btn == 1) { lock_down = 1; lock_y0 = e->y; }
-        else if (e->type == IE_MOVE && lock_down) { lock_drag = fmaxf(0, lock_y0 - e->y); dirty = 1; }
+        int h = hit_at(e->x, e->y);
+        if (e->type == IE_DOWN && e->btn == 1 && auth_dialog) {
+            if (h == H_LOCK_SUBMIT) lock_submit();
+            dirty = 1; return 1;
+        }
+        if (e->type == IE_DOWN && e->btn == 1 && h == H_POWER) { lock_power_open = !lock_power_open; dirty = 1; return 1; }
+        if (e->type == IE_DOWN && e->btn == 1 && h >= H_LOCK_SHUT && h <= H_LOCK_USER) {
+            lock_power_open = 0;
+            if (h == H_LOCK_SHUT || h == H_LOCK_RESTART) { settings_save(); sync(); exit(h == H_LOCK_RESTART ? 42 : 43); }
+            dirty = 1; return 1;
+        }
+        if (e->type == IE_DOWN && e->btn == 1 && !lock_power_open && e->y >= SCR_H * .79f && e->y <= SCR_H * .79f + 76) { lock_down = 1; lock_x0 = e->x; lock_drag = 0; }
+        else if (e->type == IE_MOVE && lock_down) { lock_drag = clampf(e->x - lock_x0, 0, fminf(390, SCR_W - 48) - 76); dirty = 1; }
         else if (e->type == IE_UP && lock_down) {
             lock_down = 0;
-            if (lock_drag < 12 || lock_drag > 120) unlock(); else lock_drag = 0;
+            if (lock_drag >= (fminf(390, SCR_W - 48) - 76) * .78f) {
+                auth_status = flx_auth_status(); auth_dialog = 1; auth_confirm = 0;
+                auth_password[0] = auth_first[0] = auth_message[0] = 0;
+                if (auth_status < 0) snprintf(auth_message, sizeof auth_message, "Service d’authentification indisponible.");
+            } else lock_drag = 0;
             dirty = 1;
         }
         return 1;
@@ -622,26 +794,24 @@ int shell_mouse(IEv *e) {
     if (e->type == IE_MOVE) {
         if (h != hover_id) { hover_id = h; dirty = 1; tip_id = h; tip_t = now(); }
         if (widgets_open && widgets_mouse(e, widgets_p)) return 1;
-        if (copilot_open && copilot_mouse(e, copilot_p)) return 1;
         return h >= 0 && !(h >= H_TB_APP && 0);
     }
     if (e->type == IE_DOWN) {
         dirty = 1;
         tip_id = -1;
         if (widgets_open && widgets_mouse(e, widgets_p)) return 1;
-        if (copilot_open && copilot_mouse(e, copilot_p)) return 1;
         if (start_open && h != H_START_BTN && (h < H_START_PANEL || h > H_ALLAPPS) && h < H_START_APP) { close_panels(); return 1; }
+        if (clock_flyout_open && h != H_CLOCK && h != H_CLOCK_PANEL) { close_panels(); if (h < 0) return 1; }
         if (power_menu && h != H_POWER && (h < H_PWR_LOCK || h > H_PWR_SHUT)) power_menu = 0;
         if (qs_open && (h < H_QS_PANEL || h > H_QS_GEAR) && h != H_NET) { qs_open = 0; if (h < 0) return 1; }
         if (dm_open && (h < H_DM_PANEL || h > H_DM_REFRESH)) { dm_open = 0; if (h < 0) return 1; }
         if (h < 0 && e->btn == 2 && !win_at(e->x, e->y) && e->y > TOP && !start_open) { close_panels(); dm_open = 1; dm_x = e->x; dm_y = e->y; MARK("DESKTOP_MENU"); return 1; }
-        if ((widgets_open && h != H_WIDGETS_BTN) || (copilot_open && h != H_COPILOT_BTN)) {
+        if ((widgets_open && h != H_WIDGETS_BTN)) {
             if (h < 0) { close_panels(); return 1; }
         }
         switch (h) {
         case H_START_BTN: case H_SEARCH_BTN: case H_TOP_SEARCH: toggle_start(); return 1;
         case H_WIDGETS_BTN: { int o = !widgets_open; close_panels(); widgets_open = o; MARK("WIDGETS %s", o ? "open" : "close"); return 1; }
-        case H_COPILOT_BTN: { int o = !copilot_open; close_panels(); copilot_open = o; MARK("COPILOT %s", o ? "open" : "close"); return 1; }
         case H_NET: { int o = !qs_open; close_panels(); qs_open = o; MARK("QUICK %s", o ? "open" : "close"); return 1; }
         case H_QS_NET: launch("settings", "network"); close_panels(); return 1;
         case H_QS_DARK: shell_theme(!TH.dark, TH.accent_i, TH.wall); return 1;
@@ -656,7 +826,8 @@ int shell_mouse(IEv *e) {
         case H_DM_DISPLAY: launch("settings", 0); close_panels(); return 1;
         case H_DM_TERMINAL: launch("terminal", 0); close_panels(); return 1;
         case H_DM_REFRESH: close_panels(); load_wallpaper(); dirty = 1; return 1;
-        case H_CLOCK: { int o = !widgets_open; close_panels(); widgets_open = o; return 1; }
+        case H_CLOCK: { int o = !clock_flyout_open; close_panels(); clock_flyout_open = o; MARK("CLOCK_FLYOUT %s", o ? "open" : "close"); return 1; }
+        case H_CLOCK_PANEL: return 1;
         case H_POWER: power_menu = !power_menu; return 1;
         case H_PWR_LOCK: lock_now(); return 1;
         case H_PWR_RESTART: case H_PWR_SHUT:
@@ -675,7 +846,6 @@ int shell_mouse(IEv *e) {
     }
     if (e->type == IE_UP || e->type == IE_WHEEL) {
         if (widgets_open && widgets_mouse(e, widgets_p)) return 1;
-        if (copilot_open && copilot_mouse(e, copilot_p)) return 1;
         return h >= 0;
     }
     return 0;
@@ -684,7 +854,19 @@ int shell_mouse(IEv *e) {
 int shell_key(IEv *e) {
     if (phase == PH_BOOT) return 1;
     if (phase == PH_LOCK) {
-        if (e->type == IE_KEY && (e->key == K_ENTER || e->key == ' ' || e->key == K_UP)) unlock();
+        if (e->type == IE_KEY && auth_dialog) {
+            if (e->key == K_ESC) { auth_dialog = auth_confirm = 0; auth_password[0] = auth_first[0] = 0; }
+            else if (e->key == K_ENTER) lock_submit();
+            else if (e->key == K_BACKSPACE) {
+                size_t n = strlen(auth_password);
+                if (n) { do { n--; } while (n && ((unsigned char)auth_password[n] & 0xC0) == 0x80); auth_password[n] = 0; }
+            } else if (e->text[0] && (unsigned char)e->text[0] >= 0x20) {
+                size_t n = strlen(auth_password), add = strlen(e->text);
+                if (add && add < sizeof e->text && n + add < sizeof auth_password - 1) memcpy(auth_password + n, e->text, add + 1);
+            }
+            dirty = 1; return 1;
+        }
+        if (e->type == IE_KEY && e->key == K_ESC) { lock_power_open = 0; lock_drag = 0; dirty = 1; }
         return 1;
     }
     // Alt+Tab
@@ -710,7 +892,6 @@ int shell_key(IEv *e) {
     if (e->type != IE_KEY || !e->key) return 0;
     if (e->mods & MOD_SUPER) {
         int k = e->key;
-        if (k == 'c') { int o = !copilot_open; close_panels(); copilot_open = o; MARK("COPILOT %s", o ? "open" : "close"); return 1; }
         if (k == 'w') { int o = !widgets_open; close_panels(); widgets_open = o; MARK("WIDGETS %s", o ? "open" : "close"); return 1; }
         if (k == 'e') { launch("explorer", 0); return 1; }
         if (k == 'l') { lock_now(); return 1; }
@@ -718,7 +899,7 @@ int shell_key(IEv *e) {
         if (k == 'a') { int o = !qs_open; close_panels(); qs_open = o; MARK("QUICK %s", o ? "open" : "close"); return 1; }
         return 0;   // Win+arrows go to the window manager
     }
-    if (e->key == K_ESC && (start_open || widgets_open || copilot_open || qs_open || dm_open)) { close_panels(); MARK("PANELS close"); return 1; }
+    if (e->key == K_ESC && (start_open || widgets_open || qs_open || dm_open || clock_flyout_open)) { close_panels(); MARK("PANELS close"); return 1; }
     if (start_open) {
         int n = strlen(query);
         if (e->key == K_BACKSPACE) { if (n) query[n - 1] = 0; }
@@ -727,7 +908,6 @@ int shell_key(IEv *e) {
         dirty = 1;
         return 1;
     }
-    if (copilot_open && copilot_key(e)) { dirty = 1; return 1; }
     if (widgets_open && widgets_key(e)) { dirty = 1; return 1; }
     return 0;
 }

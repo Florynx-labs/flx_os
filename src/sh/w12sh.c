@@ -306,25 +306,26 @@ static void cmd_fetch(void) {
     double up = 0; char *u = read_file("/proc/uptime", 0); if (u) { up = atof(u); free(u); }
     long used_mb = (tot - av) / 1024, tot_mb = tot / 1024;
     int upmin = (int)(up / 60);
-    // ascii art: FLX diamond mark
-    p("  " C_YEL "   ...:::::....   " C_RESET "\n");
-    p("  " C_YEL "  .:        :..  " C_RESET "   " C_BOLD C_CYAN "flx@flx-os" C_RESET "\n");
-    p("  " C_YEL " .:  .####.  :.  " C_RESET "   " C_DIM "----------" C_RESET "\n");
-    p("  " C_YEL " :  .######.  :  " C_RESET "   " C_CYAN "OS" C_RESET "       FLX OS " W12_VERSION " (Dev)\n");
-    p("  " C_YEL " :  ###  ###  :  " C_RESET "   " C_CYAN "Host" C_RESET "     FLX Laptop\n");
-    p("  " C_YEL " .:  '####'  :.  " C_RESET "   " C_CYAN "Kernel" C_RESET "   %s\n", kv);
-    p("  " C_YEL "  ':.      .:'   " C_RESET "   " C_CYAN "Uptime" C_RESET "   %d mins\n", upmin);
-    p("  " C_YEL "           " C_RESET "   " C_CYAN "Packages" C_RESET " 9 (flx-native)\n");
-    p("                   " C_CYAN "Shell" C_RESET "    flxsh " W12_VERSION "\n");
-    p("                   " C_CYAN "Resolution" C_RESET " 1920x1080\n");
-    p("                   " C_CYAN "DE" C_RESET "       FLX Desktop\n");
-    p("                   " C_CYAN "WM" C_RESET "       flx-compositor\n");
-    p("                   " C_CYAN "Theme" C_RESET "    FLX Dark\n");
-    p("                   " C_CYAN "Icons" C_RESET "    FLX Icons\n");
-    p("                   " C_CYAN "CPU" C_RESET "      %s\n", ni.ifname[0] ? "ARM64 (QEMU virt, -accel hvf)" : "ARM64 (QEMU virt)");
-    p("                   " C_CYAN "GPU" C_RESET "      virtio-gpu (DRM/KMS)\n");
-    p("                   " C_CYAN "Memory" C_RESET "   %ldMiB / %ldMiB\n\n", used_mb, tot_mb);
-    p("    \x1b[40m    \x1b[41m    \x1b[42m    \x1b[43m    \x1b[44m    \x1b[45m    \x1b[46m    \x1b[47m    \x1b[0m\n\n");
+
+    p("\n");
+    p(C_YEL "   . - .                            . ! -       " C_RESET "   " C_BOLD C_YEL "FLX OS" C_RESET "\n");
+    p(C_YEL "  --\\ , o \\ .                    . , / 8 h h \\  " C_RESET "   " C_DIM "─────────────────────────────────" C_RESET "\n");
+    p(C_YEL "   . ; 8 h h v O . ` .          . , a d 8 8 b a , " C_RESET "   " C_YEL "OS:       " C_RESET "FLX OS 0.1.0 (Dev)\n");
+    p(C_YEL "    , d 8 8 8 8 8 b a , .      ; d 8 8 8 8 8 8 b ," C_RESET "   " C_YEL "Host:     " C_RESET "FLX Laptop\n");
+    p(C_YEL "   . d 8 8 P ' ' Y Y 8 b o . . . , d 8 8 D ' ' Y Y" C_RESET "   " C_YEL "Kernel:   " C_RESET "%s\n", kv);
+    p(C_YEL "   ` 8 b ; ' ' \" \" ? * Y 8 b . . , 8 8 P ' ' \"  ." C_RESET "   " C_YEL "Uptime:   " C_RESET "%d mins\n", upmin);
+    p(C_YEL "    ` 8 b b       ' 8 8 8 8 8 8 8 8 8 8 8 8 8 ' " C_RESET "   " C_YEL "Packages: " C_RESET "124 (flx-pkg)\n");
+    p(C_YEL "     8 B > .       ' \" 8 8 8 8 8 8 8 8 8 8 8 7 '" C_RESET "   " C_YEL "Shell:    " C_RESET "flxsh 0.1.0\n");
+    p(C_YEL "    ; 8 8 8 8 8       8 b 8 8 8 8 '        8 8 8 " C_RESET "   " C_YEL "DE:       " C_RESET "FLX Desktop\n");
+    p(C_YEL "   ' 8 8 8 8 8 8       ? 8 8 ?             8 8 8 " C_RESET "   " C_YEL "WM:       " C_RESET "flx-compositor\n");
+    p(C_YEL "  8 8 8 8 8 8 8 ; 8 :.   8 8             . £ 8 J " C_RESET "   " C_YEL "Theme:    " C_RESET "FLX Dark\n");
+    p(C_YEL "    ' 8 8 8 8 8 8 8 8 8 .  8 8          . C 8 8 8" C_RESET "   " C_YEL "Icons:    " C_RESET "FLX Icons\n");
+    p(C_YEL "      ' ' ' C 8 8 8 8 8 . . ' '        . , 8 8 8 " C_RESET "   " C_YEL "CPU:      " C_RESET "%s\n", ni.ifname[0] ? "Intel(R) Core(TM) / Host CPU" : "FLX vCPU (4 cœurs)");
+    p(C_YEL "          / \\ 8 8 . 8 8 b .    , 8 8 8 / \" \"     " C_RESET "   " C_YEL "GPU:      " C_RESET "virtio-gpu (DRM/KMS 1920x1080)\n");
+    p(C_YEL "            ' Y 8 8 a !  . a 8 P '               " C_RESET "   " C_YEL "Memory:   " C_RESET "%ldMiB / %ldMiB\n", used_mb, tot_mb);
+    p(C_YEL "              ' Y b b . d 8 P '                  " C_RESET "\n");
+    p(C_YEL "                  8 . . 8                        " C_RESET "   \x1b[47m   \x1b[41m   \x1b[42m   \x1b[43m   \x1b[44m   \x1b[45m   \x1b[46m   \x1b[100m   \x1b[0m\n");
+    p(C_YEL "                    ' Y '                        " C_RESET "\n\n");
 }
 
 static void help(void) {
@@ -477,7 +478,7 @@ int main(void) {
     char line[2048];
     for (;;) {
         char cwd[512], prompt[700]; pretty_cwd(cwd, sizeof cwd);
-        snprintf(prompt, sizeof prompt, C_GREEN "user@flx-os" C_RESET " " C_BLUE "%s" C_RESET " > ", cwd);
+        snprintf(prompt, sizeof prompt, C_GREEN C_BOLD "flx@flx-os" C_RESET ":" C_CYAN "%s" C_RESET "$ ", cwd);
         p("%s", prompt);
         fflush(stdout);
         if (tty) tcsetattr(0, TCSANOW, &raw);

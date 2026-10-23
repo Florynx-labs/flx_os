@@ -1,4 +1,4 @@
-// Own JSON parser (recursive descent) and string escaper. Used for weather and Copilot.
+// Own JSON parser (recursive descent) and string escaper. Used for weather data.
 #include "w12.h"
 #include <ctype.h>
 

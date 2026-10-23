@@ -8,7 +8,7 @@ typedef struct { char name[256]; int dir; long size; time_t mtime; int exec; } E
 static Ent *ents; static int nents;
 static char cwd[1024] = "/home/user";
 static char hist[32][1024]; static int nhist, hpos = -1;
-static int sel = -1, grid_view;
+static int sel = -1, grid_view = 1;
 static Scroll sc;
 static int modal;            // 1 rename/new, 2 delete confirm
 static char fieldbuf[256];
@@ -205,38 +205,73 @@ static void draw(Canvas *c) {
             bx += w;
         }
     }
-    // navigation pane
+    // navigation pane (matches reference design)
     float top = TOOLH + CRUMBH, ph = H - top - STATH;
-    struct { const char *l, *p; int folder; } nav[] = {
-        { "Dossier personnel", "/home/user", 0 }, { "Bureau", "/home/user/Desktop", 1 }, { "Documents", "/home/user/Documents", 1 },
-        { "Telechargements", "/home/user/Downloads", 1 }, { "Images", "/home/user/Pictures", 1 }, { "Musique", "/home/user/Music", 1 },
-        { "This PC", "/", 2 }, { "System (/bin)", "/bin", 1 } };
-    for (int i = 0; i < 8; i++) {
-        float ny = top + 8 + i * 38 + (i >= 6 ? 14 : 0);
-        if (i == 6) g_rect(c, 16, ny - 9, NAVW - 30, 1, TH.line);
-        bool on = !strcmp(cwd, nav[i].p);
-        if (on) g_rrect(c, 8, ny, NAVW - 16, 34, 5, 5, TH.dark ? 0x22FFFFFF : 0x0F000000);
-        else if (ui_hover(8, ny, NAVW - 16, 34)) g_rrect(c, 8, ny, NAVW - 16, 34, 5, 5, TH.hover);
-        if (on) g_rrect(c, 8, ny + 9, 3, 16, 1.5f, 1.5f, TH.accent);
-        if (nav[i].folder == 1) icon_folder(c, 22, ny + 6, 22);
-        else if (nav[i].folder == 2) icon_glyph(c, G_DISPLAY, 33, ny + 17, 18, TH.accent);
-        else icon_glyph(c, G_HOME, 33, ny + 17, 18, TH.accent);
-        text(c, F_REG, 14, 0, 54, ny + 22, TH.text, nav[i].l);
-        if (ui_click(8, ny, NAVW - 16, 34)) go(nav[i].p, 1);
+    g_rect(c, 0, top, NAVW, ph, 0xFF060F13);
+    g_rect(c, NAVW - 1, top, 1, ph, 0xFF122329);
+
+    struct { const char *l, *p; int g; } nav_items[] = {
+        { "Récents", "/home/user/.config/recent", G_CLOCK },
+        { "Dossier personnel", "/home/user", G_HOME },
+        { "Bureau", "/home/user/Desktop", G_DISPLAY },
+        { "Documents", "/home/user/Documents", G_FILE },
+        { "Images", "/home/user/Pictures", G_PALETTE },
+        { "Musique", "/home/user/Music", G_VOLUME },
+        { "Vidéos", "/home/user/Videos", G_STAR },
+        { "Téléchargements", "/home/user/Downloads", G_CHEV_D },
+        { "Corbeille", "/home/user/Trash", G_TRASH }
+    };
+    int nnav = sizeof(nav_items) / sizeof(nav_items[0]);
+
+    float ny = top + 10;
+    for (int i = 0; i < nnav; i++) {
+        bool on = !strcmp(cwd, nav_items[i].p);
+        if (on) {
+            g_rrect(c, 10, ny, NAVW - 20, 32, 6, 6, 0x33F5AD32);
+            g_rrect_line(c, 10, ny, NAVW - 20, 32, 6, 1.5f, 0xFFF5AD32);
+        } else if (ui_hover(10, ny, NAVW - 20, 32)) {
+            g_rrect(c, 10, ny, NAVW - 20, 32, 6, 6, 0x18FFFFFF);
+        }
+        icon_glyph(c, nav_items[i].g, 28, ny + 16, 16, on ? 0xFFFFD477 : 0xFF8AA0A6);
+        text(c, on ? F_SEMI : F_REG, 13, 0, 48, ny + 21, on ? 0xFFFFFFFF : 0xFFCBD5E1, nav_items[i].l);
+        if (ui_click(10, ny, NAVW - 20, 32)) go(nav_items[i].p, 1);
+        ny += 36;
     }
-    // content
+
+    // Devices & Network section
+    ny += 12;
+    text(c, F_SEMI, 12, 0, 16, ny, 0xFF527078, "Périphériques");
+    ny += 16;
+    icon_glyph(c, G_SAVE, 26, ny + 10, 16, 0xFFE0A21B);
+    text(c, F_REG, 13, 0, 44, ny + 15, 0xFFE2E8F0, "Disque système");
+    ny += 22;
+    // Storage bar
+    g_rrect(c, 44, ny, 140, 5, 2.5f, 2.5f, 0xFF142830);
+    g_rrect(c, 44, ny, 60, 5, 2.5f, 2.5f, 0xFF2FD5C6);
+    ny += 14;
+    text(c, F_REG, 11, 0, 44, ny, 0xFF708890, "42.8 Go / 100 Go");
+
+    ny += 22;
+    text(c, F_SEMI, 12, 0, 16, ny, 0xFF527078, "Réseau");
+    ny += 16;
+    icon_glyph(c, G_NET, 26, ny + 10, 16, 0xFFE0A21B);
+    text(c, F_REG, 13, 0, 44, ny + 15, 0xFFE2E8F0, "Réseau local");
+
+    // content area
     float cx = NAVW, cw = W - NAVW;
-    g_rrect(c, cx, top, cw - 8, ph, 8, 8, TH.dark ? 0xFF1F1F1F : 0xFFFFFFFF);
+    g_rect(c, cx, top, cw, ph, 0xFF040A0D);
+
     int sc0[4]; g_getclip(c, sc0);
-    g_clip(c, cx, top, cx + cw - 8, top + ph);
+    g_clip(c, cx, top, cx + cw, top + ph);
     float content_h;
+
     if (!grid_view) {
         float hy = top + 4;
-        text(c, F_REG, 13, 0, cx + 48, hy + 20, TH.sub, "Name");
-        text(c, F_REG, 13, 0, cx + cw * 0.48f, hy + 20, TH.sub, "Date modified");
+        text(c, F_REG, 13, 0, cx + 48, hy + 20, TH.sub, "Nom");
+        text(c, F_REG, 13, 0, cx + cw * 0.48f, hy + 20, TH.sub, "Date de modification");
         text(c, F_REG, 13, 0, cx + cw * 0.68f, hy + 20, TH.sub, "Type");
-        text(c, F_REG, 13, 0, cx + cw * 0.84f, hy + 20, TH.sub, "Size");
-        g_rect(c, cx + 12, hy + 32, cw - 32, 1, TH.line);
+        text(c, F_REG, 13, 0, cx + cw * 0.84f, hy + 20, TH.sub, "Taille");
+        g_rect(c, cx + 12, hy + 32, cw - 32, 1, 0xFF122329);
         float ly = hy + 38;
         content_h = nents * ROWH + 50;
         int sc1[4]; g_getclip(c, sc1);
@@ -245,18 +280,17 @@ static void draw(Canvas *c) {
             float ry = ly + i * ROWH - sc.pos;
             if (ry + ROWH < ly || ry > top + ph) continue;
             Ent *e = &ents[i];
-            if (i == sel) g_rrect(c, cx + 8, ry, cw - 24, ROWH - 2, 5, 5, TH.accent_soft);
-            else if (ui_hover(cx + 8, ry, cw - 24, ROWH - 2) && ui_in(cx, ly, cw, top + ph - ly)) g_rrect(c, cx + 8, ry, cw - 24, ROWH - 2, 5, 5, TH.hover);
+            if (i == sel) g_rrect(c, cx + 8, ry, cw - 24, ROWH - 2, 5, 5, 0x22F5AD32);
+            else if (ui_hover(cx + 8, ry, cw - 24, ROWH - 2) && ui_in(cx, ly, cw, top + ph - ly)) g_rrect(c, cx + 8, ry, cw - 24, ROWH - 2, 5, 5, 0x14FFFFFF);
             if (e->dir) icon_folder(c, cx + 18, ry + 5, 22); else icon_file(c, e->name, cx + 18, ry + 5, 22);
             char *nm = text_ellipsize(F_REG, 14, e->name, cw * 0.48f - 60);
-            text(c, F_REG, 14, 0, cx + 48, ry + 22, TH.text, nm); free(nm);
+            text(c, F_REG, 14, 0, cx + 48, ry + 22, 0xFFE2E8F0, nm); free(nm);
             char d[64]; struct tm tm; localtime_r(&e->mtime, &tm); strftime(d, sizeof d, "%d/%m/%Y %H:%M", &tm);
-            text(c, F_REG, 13, 0, cx + cw * 0.48f, ry + 22, TH.sub, d);
+            text(c, F_REG, 13, 0, cx + cw * 0.48f, ry + 22, 0xFF708890, d);
             const char *ext = strrchr(e->name, '.');
-            char ty[64]; if (e->dir) snprintf(ty, sizeof ty, "File folder"); else if (e->exec) snprintf(ty, sizeof ty, "Application"); else if (ext) snprintf(ty, sizeof ty, "%s File", ext + 1); else snprintf(ty, sizeof ty, "File");
-            for (char *q = ty; *q && q < ty + 8 && !e->dir && !e->exec && ext; q++) *q = toupper(*q);
-            text(c, F_REG, 13, 0, cx + cw * 0.68f, ry + 22, TH.sub, ty);
-            if (!e->dir) { char sz[32]; human_size(e->size, sz, sizeof sz); text(c, F_REG, 13, 0, cx + cw * 0.84f, ry + 22, TH.sub, sz); }
+            char ty[64]; if (e->dir) snprintf(ty, sizeof ty, "Dossier"); else if (e->exec) snprintf(ty, sizeof ty, "Application"); else if (ext) snprintf(ty, sizeof ty, "Fichier %s", ext + 1); else snprintf(ty, sizeof ty, "Fichier");
+            text(c, F_REG, 13, 0, cx + cw * 0.68f, ry + 22, 0xFF708890, ty);
+            if (!e->dir) { char sz[32]; human_size(e->size, sz, sizeof sz); text(c, F_REG, 13, 0, cx + cw * 0.84f, ry + 22, 0xFF708890, sz); }
             if (ui_in(cx, ly, cw, top + ph - ly)) {
                 if (ui_dblclick(cx + 8, ry, cw - 24, ROWH - 2)) open_item(i);
                 else if (ui_downin(cx + 8, ry, cw - 24, ROWH - 2)) { sel = i; ctx_open = 0; }
@@ -266,24 +300,55 @@ static void draw(Canvas *c) {
         g_setclip(c, sc1);
         ui_scroll(&sc, cx, ly, cw - 8, top + ph - ly, content_h);
     } else {
-        int per = maxi(1, (int)((cw - 24) / 118));
-        float gy = top + 12;
-        content_h = ((nents + per - 1) / per) * 124 + 24;
+        // Modern Teal Glass Folder Cards (Matches files_explorer_windows_exemple.png)
+        int card_w = 148, card_h = 138;
+        int per = maxi(1, (int)((cw - 32) / (card_w + 16)));
+        float gy = top + 18;
+        content_h = ((nents + per - 1) / per) * (card_h + 16) + 32;
+
         for (int i = 0; i < nents; i++) {
-            float gx = cx + 12 + (i % per) * 118, yy = gy + (i / per) * 124 - sc.pos;
+            float gx = cx + 20 + (i % per) * (card_w + 16), yy = gy + (i / per) * (card_h + 16) - sc.pos;
+            if (yy + card_h < top || yy > top + ph) continue;
             Ent *e = &ents[i];
-            if (i == sel) g_rrect(c, gx, yy, 110, 116, 6, 6, TH.accent_soft);
-            else if (ui_hover(gx, yy, 110, 116)) g_rrect(c, gx, yy, 110, 116, 6, 6, TH.hover);
-            if (e->dir) icon_folder(c, gx + 23, yy + 8, 64); else icon_file(c, e->name, gx + 23, yy + 8, 64);
-            char *nm = text_ellipsize(F_REG, 13, e->name, 104);
-            text_c(c, F_REG, 13, 0, gx + 55, yy + 96, TH.text, nm); free(nm);
-            if (ui_dblclick(gx, yy, 110, 116)) open_item(i);
-            else if (ui_downin(gx, yy, 110, 116)) { sel = i; ctx_open = 0; }
-            else if (ui_rclick(gx, yy, 110, 116)) { sel = i; ctx_open = 1; ctx_x = U.mx; ctx_y = U.my; ctx_item = i; }
+            bool hov = ui_hover(gx, yy, card_w, card_h);
+            bool is_sel = (i == sel);
+
+            // Folder Glass Card Body
+            if (e->dir) {
+                g_vgrad(c, gx, yy, card_w, card_h, 12, hov ? 0xDD15363D : 0xAA0D242A, hov ? 0xEE091B20 : 0xDD061318);
+                g_rrect_line(c, gx, yy, card_w, card_h, 12, 1.5f, is_sel ? 0xFFF5AD32 : (hov ? 0xFF2CD5C6 : 0x401E4A52));
+
+                // Glowing folder icon
+                icon_folder(c, gx + card_w / 2 - 28, yy + 18, 56);
+
+                // Title
+                char *nm = text_ellipsize(F_SEMI, 14, e->name, card_w - 16);
+                text_c(c, F_SEMI, 14, 0, gx + card_w / 2, yy + 94, 0xFFFFFFFF, nm);
+                free(nm);
+
+                // Subtitle (element count or subtitle)
+                text_c(c, F_REG, 12, 0, gx + card_w / 2, yy + 114, 0xFF35D6C7, "Dossier");
+            } else {
+                g_vgrad(c, gx, yy, card_w, card_h, 12, hov ? 0xCC132026 : 0x88091419, hov ? 0xDD09151A : 0xBB050D11);
+                g_rrect_line(c, gx, yy, card_w, card_h, 12, 1.2f, is_sel ? 0xFFF5AD32 : (hov ? 0x60FFFFFF : 0x24FFFFFF));
+
+                icon_file(c, e->name, gx + card_w / 2 - 24, yy + 20, 48);
+
+                char *nm = text_ellipsize(F_REG, 13, e->name, card_w - 16);
+                text_c(c, F_REG, 13, 0, gx + card_w / 2, yy + 94, 0xFFE2E8F0, nm);
+                free(nm);
+
+                char sz[32]; human_size(e->size, sz, sizeof sz);
+                text_c(c, F_REG, 11, 0, gx + card_w / 2, yy + 114, 0xFF708890, sz);
+            }
+
+            if (ui_dblclick(gx, yy, card_w, card_h)) open_item(i);
+            else if (ui_downin(gx, yy, card_w, card_h)) { sel = i; ctx_open = 0; }
+            else if (ui_rclick(gx, yy, card_w, card_h)) { sel = i; ctx_open = 1; ctx_x = U.mx; ctx_y = U.my; ctx_item = i; }
         }
         ui_scroll(&sc, cx, top, cw - 8, ph, content_h);
     }
-    if (!nents) text_c(c, F_REG, 14, 0, cx + cw / 2, top + 120, TH.sub, "This folder is empty.");
+    if (!nents) text_c(c, F_REG, 15, 0, cx + cw / 2, top + 140, 0xFF708890, "Ce dossier est vide.");
     if (ui_rclick(cx, top, cw, ph)) { ctx_open = 1; ctx_x = U.mx; ctx_y = U.my; ctx_item = -1; }
     if (ui_downin(cx, top, cw, ph) && !ctx_open) sel = -1;
     g_setclip(c, sc0);

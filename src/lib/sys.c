@@ -1,6 +1,7 @@
 // Small utilities shared by every FLX OS program (from Lumen OS 2, MIT).
 #include "w12.h"
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <unistd.h>
 
 double now(void) {
@@ -74,4 +75,15 @@ void human_size(double b, char *out, int n) {
     while (b >= 1024 && i < 4) { b /= 1024; i++; }
     if (i == 0) snprintf(out, n, "%.0f %s", b, u[i]);
     else snprintf(out, n, b < 10 ? "%.1f %s" : "%.0f %s", b, u[i]);
+}
+
+int flx_fs_stats(const char *path, FlxFsStats *out) {
+    if (!path || !out) { errno = EINVAL; return -1; }
+    struct statvfs v;
+    if (statvfs(path, &v) != 0) return -1;
+    uint64_t unit = v.f_frsize ? v.f_frsize : v.f_bsize;
+    out->total_bytes = (uint64_t)v.f_blocks * unit;
+    out->available_bytes = (uint64_t)v.f_bavail * unit;
+    out->used_bytes = out->total_bytes - (uint64_t)v.f_bfree * unit;
+    return 0;
 }

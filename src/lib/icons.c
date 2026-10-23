@@ -1,6 +1,7 @@
 // Theme palette, app table, and every icon in FLX OS — all drawn in code, all original.
 // By Florynx Labs. Built on Lumen OS 2 rasteriser.
 #include "w12.h"
+#include <strings.h>
 
 // ---- theme (FLX OS dark palette: near-black surfaces, gold accent, teal highlights) -------
 const uint32_t ACCENTS[NACCENT] = { 0xFFF5AD32, 0xFF35D6C0, 0xFF1F6FEB, 0xFF7A4FD6, 0xFFD13469, 0xFF2E8B57 };
@@ -40,43 +41,59 @@ const AppInfo APPS[NAPPS] = {
     { "taskmgr",  "Gestionnaire de t\u00e2ches", "Processus actifs" },
     { "minesweeper", "Minesweeper", "Jeu classique" },
     { "proof",    "Informations syst\u00e8me", "FLX System Info" },
+    { "store",    "Centre d'applications", "FLX Store" },
 };
 int app_by_exe(const char *exe) {
     for (int i = 0; i < NAPPS; i++) if (!strcmp(APPS[i].exe, exe)) return i;
     return -1;
 }
 
-// ---- FLX OS logo mark: stylised gold diamond fox-ear shape ------------------------------------
-// A upward-pointing diamond with two angled "wings" — the Florynx mark.
+// ---- FLX OS logo mark: official golden fox mark -----------------------------------------------
+static Image *cached_logo_mark = NULL;
+static int logo_tried = 0;
+
 void icon_logo(Canvas *c, float cx, float cy, float s, int alpha) {
+    if (!logo_tried) {
+        cached_logo_mark = image_load("/share/icons/flx_os_logo.png");
+        if (!cached_logo_mark) cached_logo_mark = image_load("/share/icons/flx_logo_mark.png");
+        logo_tried = 1;
+    }
+    if (cached_logo_mark) {
+        g_image(c, cached_logo_mark, cx - s / 2, cy - s / 2, s, s, 0, alpha);
+        return;
+    }
     float A = alpha / 255.0f;
-    // gold glow halo
     g_circle(c, cx, cy, s * 0.65f, c_alpha(0x28F5AD32, A));
-    // main diamond body (top + bottom halves with gradient)
     float h = s * 0.50f, hw = s * 0.30f;
-    // upper half: darker gold at top, bright gold at centre
     float up[8] = { cx, cy - h, cx + hw, cy - h*0.08f, cx, cy, cx - hw, cy - h*0.08f };
     g_poly(c, up, 4, c_alpha(0xFFFFC24B, A), c_alpha(0xFFF5AD32, 0.7f*A), cx, cy-h, cx, cy);
-    // lower half: gold to dark amber
     float dn[8] = { cx - hw, cy - h*0.08f, cx, cy, cx + hw, cy - h*0.08f, cx, cy + h*0.52f };
     g_poly(c, dn, 4, c_alpha(0xFFF5AD32, A), c_alpha(0xFFB87E1A, 0.9f*A), cx, cy, cx, cy+h*0.52f);
-    // left wing
     float lw[6] = { cx - hw*0.55f, cy - h*0.55f, cx - hw*1.62f, cy - h*0.10f, cx - hw*0.5f, cy - h*0.05f };
     g_poly(c, lw, 3, c_alpha(0xFFFFD477, 0.85f*A), c_alpha(0xFFF5AD32, 0.35f*A), cx-hw*1.6f, cy, cx, cy-h);
-    // right wing
     float rw[6] = { cx + hw*0.55f, cy - h*0.55f, cx + hw*1.62f, cy - h*0.10f, cx + hw*0.5f, cy - h*0.05f };
     g_poly(c, rw, 3, c_alpha(0xFFFFD477, 0.85f*A), c_alpha(0xFFF5AD32, 0.35f*A), cx, cy-h, cx+hw*1.6f, cy);
-    // bright highlight vein down the centre
     g_line(c, cx, cy - h, cx, cy + h * 0.28f, fmaxf(1.0f, s * 0.03f), c_alpha(0xFFFFEEBB, 0.60f * A));
 }
 
-void icon_copilot(Canvas *c, float cx, float cy, float s) {
-    // a four-point spark made of two lens shapes, cyan to magenta
-    float r = s * 0.48f, k = s * 0.13f;
-    g_poly(c, (float[]){ cx, cy - r, cx + k, cy, cx, cy + r, cx - k, cy }, 4, 0xFF39D5FF, 0xFFB44CFF, cx, cy - r, cx, cy + r);
-    g_poly(c, (float[]){ cx - r, cy, cx, cy - k, cx + r, cy, cx, cy + k }, 4, 0xFF39D5FF, 0xFFFF5FA8, cx - r, cy, cx + r, cy);
-    g_circle(c, cx + r * 0.62f, cy - r * 0.62f, s * 0.08f, 0xFFFFC24B);
+// ---- FLX User avatar --------------------------------------------------------------------------
+static Image *cached_avatar = NULL;
+static int avatar_tried = 0;
+
+void icon_user_avatar(Canvas *c, float x, float y, float size, float r, int alpha) {
+    if (!avatar_tried) {
+        cached_avatar = image_load("/share/icons/user_avatar.png");
+        avatar_tried = 1;
+    }
+    if (cached_avatar) {
+        g_image_cover(c, cached_avatar, x, y, size, size, r, alpha);
+    } else {
+        g_circle(c, x + size / 2, y + size / 2, size / 2, TH.accent);
+        text_c(c, F_SEMI, size * 0.5f, 0, x + size / 2, y + size * 0.6f, TH.accent_fg, "F");
+    }
 }
+
+
 
 // ---- app icons ----------------------------------------------------------------------------------------
 void icon_folder(Canvas *c, float x, float y, float s) {
@@ -86,20 +103,75 @@ void icon_folder(Canvas *c, float x, float y, float s) {
 }
 void icon_file(Canvas *c, const char *name, float x, float y, float s) {
     const char *ext = name ? strrchr(name, '.') : 0;
-    uint32_t band = 0xFF2F7CF6;
-    if (ext && (!strcmp(ext, ".png") || !strcmp(ext, ".jpg"))) band = 0xFF13A10E;
-    else if (ext && (!strcmp(ext, ".c") || !strcmp(ext, ".h") || !strcmp(ext, ".sh"))) band = 0xFF8250DF;
-    else if (ext && !strcmp(ext, ".md")) band = 0xFFE8590C;
+    int image = ext && (!strcasecmp(ext, ".png") || !strcasecmp(ext, ".jpg") || !strcasecmp(ext, ".jpeg") || !strcasecmp(ext, ".gif") || !strcasecmp(ext, ".webp") || !strcasecmp(ext, ".svg"));
+    int audio = ext && (!strcasecmp(ext, ".mp3") || !strcasecmp(ext, ".wav") || !strcasecmp(ext, ".ogg") || !strcasecmp(ext, ".flac"));
+    int video = ext && (!strcasecmp(ext, ".mp4") || !strcasecmp(ext, ".mkv") || !strcasecmp(ext, ".webm") || !strcasecmp(ext, ".mov"));
+    int pdf = ext && !strcasecmp(ext, ".pdf");
+    int source = ext && (!strcasecmp(ext, ".c") || !strcasecmp(ext, ".h") || !strcasecmp(ext, ".rs") || !strcasecmp(ext, ".py") || !strcasecmp(ext, ".js") || !strcasecmp(ext, ".ts") || !strcasecmp(ext, ".sh"));
+    int archive = ext && (!strcasecmp(ext, ".zip") || !strcasecmp(ext, ".tar") || !strcasecmp(ext, ".gz") || !strcasecmp(ext, ".xz") || !strcasecmp(ext, ".7z"));
+    uint32_t band = 0xFF8796A5;
+    if (image) band = 0xFF16B9C8;
+    else if (source) band = 0xFF6E73E8;
+    else if (ext && (!strcasecmp(ext, ".md") || !strcasecmp(ext, ".txt") || !strcasecmp(ext, ".log") || !strcasecmp(ext, ".csv"))) band = 0xFF3E9BE8;
+    else if (pdf) band = 0xFFE94B52;
+    else if (audio) band = 0xFFAA55D9;
+    else if (video) band = 0xFF3988F6;
+    else if (archive) band = 0xFFF39A35;
+    else if (ext && (!strcasecmp(ext, ".toml") || !strcasecmp(ext, ".json") || !strcasecmp(ext, ".yaml") || !strcasecmp(ext, ".yml") || !strcasecmp(ext, ".ini") || !strcasecmp(ext, ".conf"))) band = 0xFF28A780;
+    else if (ext && (!strcasecmp(ext, ".bin") || !strcasecmp(ext, ".elf") || !strcasecmp(ext, ".app"))) band = 0xFFF5AD32;
     g_rrect(c, x + s * .18f, y + s * .06f, s * .64f, s * .88f, s * .07f, s * .07f, 0xFFB9BEC7);
     g_rrect(c, x + s * .19f, y + s * .07f, s * .62f, s * .86f, s * .06f, s * .06f, 0xFFFFFFFF);
-    for (int i = 0; i < 4; i++) g_rect(c, x + s * .3f, y + s * (.36f + i * .12f), s * (i == 3 ? .26f : .40f), fmaxf(1, s * .04f), 0xFFC4C8D0);
+    if (image) {
+        g_rrect(c, x+s*.25f,y+s*.34f,s*.50f,s*.40f,s*.04f,s*.04f,0xFF145464);
+        g_circle(c,x+s*.62f,y+s*.44f,s*.055f,0xFFFFD36C);
+        float m[12]={x+s*.28f,y+s*.68f,x+s*.43f,y+s*.51f,x+s*.53f,y+s*.62f,x+s*.63f,y+s*.48f,x+s*.73f,y+s*.68f,x+s*.73f,y+s*.72f};
+        g_poly(c,m,6,0xFF51CFBC,0xFF1789A0,x+s*.28f,y+s*.48f,x+s*.73f,y+s*.72f);
+    } else if (audio) {
+        g_line(c,x+s*.52f,y+s*.36f,x+s*.52f,y+s*.68f,s*.07f,band);
+        g_line(c,x+s*.52f,y+s*.38f,x+s*.72f,y+s*.33f,s*.07f,band);
+        g_line(c,x+s*.72f,y+s*.33f,x+s*.72f,y+s*.59f,s*.07f,band);
+        g_circle(c,x+s*.43f,y+s*.70f,s*.09f,band); g_circle(c,x+s*.63f,y+s*.61f,s*.09f,band);
+    } else if (video) {
+        g_rrect(c,x+s*.25f,y+s*.37f,s*.50f,s*.34f,s*.05f,s*.05f,0xFF1D62B9);
+        float p[6]={x+s*.43f,y+s*.41f,x+s*.43f,y+s*.67f,x+s*.64f,y+s*.54f};
+        g_poly(c,p,3,0xFFFFFFFF,0xFFFFFFFF,x+s*.43f,y+s*.41f,x+s*.64f,y+s*.67f);
+    } else if (pdf) {
+        text_c(c,F_SEMI,s*.22f,0,x+s*.50f,y+s*.69f,band,"PDF");
+    } else if (archive) {
+        g_rect(c,x+s*.32f,y+s*.36f,s*.36f,s*.37f,0xFFE6A849);
+        for(int i=0;i<3;i++) g_rect(c,x+s*.47f,y+s*(.40f+i*.09f),s*.08f,s*.045f,0xFF70451A);
+    } else if (source) {
+        text_c(c,F_SEMI,s*.30f,0,x+s*.50f,y+s*.68f,band,"<>");
+    } else {
+        for (int i = 0; i < 3; i++) g_rect(c, x + s * .3f, y + s * (.46f + i * .10f), s * .40f, fmaxf(1, s * .04f), 0xFFC4C8D0);
+    }
     g_rrect(c, x + s * .19f, y + s * .07f, s * .62f, s * .16f, s * .06f, 0, band);
 }
 
+static Image *app_pngs[NAPPS] = {0};
+static int app_pngs_tried[NAPPS] = {0};
+
 void icon_app(Canvas *c, int app, float x, float y, float s) {
+    if (app < 0 || app >= NAPPS) return;
+    if (!app_pngs_tried[app]) {
+        char path[64];
+        snprintf(path, sizeof path, "/share/icons/%s.png", APPS[app].exe);
+        app_pngs[app] = image_load(path);
+        app_pngs_tried[app] = 1;
+    }
+    if (app_pngs[app]) {
+        g_image(c, app_pngs[app], x, y, s, s, 0, 255);
+        return;
+    }
     float cx = x + s / 2, cy = y + s / 2;
     switch (app) {
     case APP_EXPLORER: icon_folder(c, x, y, s); break;
+    case APP_STORE: {
+        g_vgrad(c, x + s * .10f, y + s * .12f, s * .80f, s * .76f, s * .14f, 0xFFE5A823, 0xFFBA7610);
+        g_rrect_line(c, x + s * .10f, y + s * .12f, s * .80f, s * .76f, s * .14f, 1.5f, 0xFFFFE28A);
+        icon_logo(c, cx, cy + s * .04f, s * .42f, 255);
+        break;
+    }
     case APP_SETTINGS: {
         for (int i = 0; i < 8; i++) {
             float a = i * (float)M_PI / 4;

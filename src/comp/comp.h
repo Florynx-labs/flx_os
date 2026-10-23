@@ -51,6 +51,7 @@ void wm_restore(Win *w);
 void wm_maximize(Win *w);
 void wm_snap(Win *w, float x, float y, float ww, float hh, const char *name);
 void wm_broadcast_theme(void);
+void wm_update_dock_autohide(void);
 void wm_tick(void);
 int wm_animating(void);
 Win *wm_top(void);
@@ -62,8 +63,9 @@ extern char *clipboard;
 enum { PH_BOOT, PH_LOCK, PH_DESK };
 extern int phase;
 extern int dirty;
+extern int dock_autohide;
 extern Canvas *wall, *wall_blur;
-extern int start_open, widgets_open, copilot_open, alttab_open;
+extern int start_open, widgets_open, alttab_open, clock_flyout_open;
 void shell_init(void);
 void shell_draw(Canvas *c);
 int shell_mouse(IEv *e);
@@ -75,16 +77,12 @@ void settings_save(void);
 void recent_add(const char *path);
 void close_panels(void);
 
-// panels.c (widgets board + copilot)
+// panels.c (widgets board)
 void panels_init(void);
 void widgets_draw(Canvas *c, float t);
-void copilot_draw(Canvas *c, float t);
 int widgets_mouse(IEv *e, float t);
-int copilot_mouse(IEv *e, float t);
 int widgets_key(IEv *e);
-int copilot_key(IEv *e);
 void panels_tick(void);
-extern int copilot_busy;
 
 // data (data.c): weather, system stats
 typedef struct { int ok; float temp, tmax, tmin, wind; int code; char place[32], cond[48]; double fetched; } Weather;
@@ -105,4 +103,4 @@ void crossfade_begin(void);
 int crossfading(void);
 void lock_now(void);
 // panel slide state 0..1
-extern float start_p, widgets_p, copilot_p;
+extern float start_p, widgets_p;

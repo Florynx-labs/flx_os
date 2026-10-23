@@ -42,6 +42,8 @@ char *read_file(const char *path, size_t *len);           // malloc'd, NUL termi
 int write_file(const char *path, const void *d, size_t n);
 void mkdir_p(const char *path);
 void human_size(double b, char *out, int n);
+typedef struct { uint64_t total_bytes, available_bytes, used_bytes; } FlxFsStats;
+int flx_fs_stats(const char *path, FlxFsStats *out);  // 0 on success, -1 with errno preserved
 
 // ---- gfx.c --------------------------------------------------------------------------------
 typedef struct { int w, h; uint32_t *px; int cx0, cy0, cx1, cy1; int stride; } Canvas;
@@ -119,13 +121,13 @@ extern Theme TH;
 void theme_set(int dark, int accent, int wall);
 
 // ---- icons.c --------------------------------------------------------------------------------
-enum { APP_EXPLORER, APP_SETTINGS, APP_TERMINAL, APP_NOTEPAD, APP_CALC, APP_BROWSER, APP_TASKMGR, APP_MINES, APP_PROOF, NAPPS };
+enum { APP_EXPLORER, APP_SETTINGS, APP_TERMINAL, APP_NOTEPAD, APP_CALC, APP_BROWSER, APP_TASKMGR, APP_MINES, APP_PROOF, APP_STORE, NAPPS };
 typedef struct { const char *exe, *title, *desc; } AppInfo;
 extern const AppInfo APPS[NAPPS];
 int app_by_exe(const char *exe);
 void icon_app(Canvas *c, int app, float x, float y, float size);
-void icon_logo(Canvas *c, float cx, float cy, float size, int alpha);   // the FLX OS fox mark (gold diamond + wing shapes)
-void icon_copilot(Canvas *c, float cx, float cy, float size);
+void icon_logo(Canvas *c, float cx, float cy, float size, int alpha);   // the official FLX OS golden fox mark
+void icon_user_avatar(Canvas *c, float x, float y, float size, float r, int alpha);
 enum {
     G_SEARCH, G_WIFI, G_WIFI_OFF, G_VOLUME, G_BATTERY, G_POWER, G_CLOSE, G_MIN, G_MAX, G_RESTORE, G_CHEV_R, G_CHEV_L,
     G_CHEV_D, G_CHEV_U, G_BACK, G_FWD, G_UP, G_REFRESH, G_PLUS, G_TRASH, G_EDIT, G_FOLDER, G_FILE, G_GEAR, G_USER,
@@ -150,6 +152,7 @@ enum {
     M_CLOSE_ME,
     M_POWER,       // a: 0 shutdown 1 restart
     M_RECENT,      // s=path (Start > Recommended)
+    M_SET_DOCK,    // a=autohide
     M_CONFIGURE = 100,  // a=w b=h c=state(0 normal 1 max 2 snapped)
     M_MOUSE,       // a=x b=y c=buttons d=ev e=button/wheel
     M_KEY,         // a=key b=mods s=utf8
@@ -187,6 +190,7 @@ void app_launch(const char *exe, const char *arg);
 void app_clip_set(const char *s);
 char *app_clip_get(void);   // malloc'd (blocks briefly for the compositor's answer)
 void app_set_theme(int dark, int accent, int wall);
+void app_set_dock(int autohide);
 void app_power(int restart);
 void app_recent(const char *path);
 void app_quit(void);
