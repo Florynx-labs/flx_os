@@ -9,7 +9,7 @@ LIBC = $(patsubst %.c,$(O)/%.o,$(wildcard lib/*.c))
 NETC = $(patsubst %.c,$(O)/%.o,$(wildcard net/*.c)) $(O)/ta.o
 WEBC = $(patsubst %.c,$(O)/%.o,$(wildcard web/*.c))
 COMPC = $(patsubst %.c,$(O)/%.o,$(wildcard comp/*.c))
-APPS = $(patsubst apps/%.c,%,$(wildcard apps/*.c))
+APPS = $(filter-out browser store,$(patsubst apps/%.c,%,$(wildcard apps/*.c)))
 LIBS = $(O)/libweb.a $(O)/libnet.a $(O)/libw12.a $(BEAR)/build/libbearssl.a -lm
 
 all: $(O)/bin/init $(O)/bin/flx-netd $(O)/bin/flx-compositor $(O)/bin/flxsh $(addprefix $(O)/bin/,$(APPS)) $(O)/tools/gen_wallpaper rust-apps
@@ -21,6 +21,8 @@ rust-apps: $(O)/libw12.a
 	cp $(O)/rust/release/explorer $(O)/bin/explorer
 	cp $(O)/rust/release/taskmgr $(O)/bin/taskmgr
 	cp $(O)/rust/release/flx-authd $(O)/bin/flx-authd
+	cd ../getra && RUSTFLAGS="-C target-feature=+crt-static" cargo build --offline --release --target-dir $(O)/rust-getra
+	cp $(O)/rust-getra/release/getra $(O)/bin/getra
 
 $(O)/%.o: %.c
 	@mkdir -p $(dir $@)

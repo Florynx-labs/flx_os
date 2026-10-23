@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <sys/utsname.h>
 #include <net/if.h>
 #include <termios.h>
@@ -336,7 +337,7 @@ static void help(void) {
         { "rm [-r] PATH", "remove files" }, { "touch FILE", "create an empty file" }, { "ps", "list processes" },
         { "kill [-9] PID", "end a process" }, { "uname [-a]", "kernel info" }, { "free", "memory usage" }, { "df", "disk usage" },
         { "ifconfig", "network configuration" }, { "ping [-c N] HOST", "ICMP echo (raw socket)" }, { "curl [-I] URL", "HTTP(S) with our own stack" },
-        { "open APP [ARG]", "open an app (notepad, browser, ...)" }, { "proof [--gui]", "show what is running and why it's ours" },
+        { "open APP [ARG]", "open an app (notepad, terminal, ...)" }, { "getra COMMAND", "package manager (install/remove/update/search/upgrade/list)" }, { "proof [--gui]", "show what is running and why it's ours" },
         { "fetch", "system summary" }, { "date, whoami, hostname, clear, exit", "" } };
     for (size_t i = 0; i < sizeof h / sizeof h[0]; i++) p("  " C_CYAN "%-22s" C_RESET " %s\n", h[i][0], h[i][1]);
 }
@@ -409,6 +410,12 @@ static void run(char *line) {
     else if (!strcmp(c, "help")) help();
     else if (!strcmp(c, "proof")) cmd_proof(argc, argv);
     else if (!strcmp(c, "fetch") || !strcmp(c, "neofetch")) cmd_fetch();
+    else if (!strcmp(c, "getra")) {
+        pid_t child = fork();
+        if (child == 0) { argv[0] = "/bin/getra"; execv(argv[0], argv); _exit(127); }
+        if (child > 0) { int status; while (waitpid(child, &status, 0) < 0 && errno == EINTR) {} }
+        else p(C_RED "getra: impossible de lancer la commande" C_RESET "\n");
+    }
     else if (!strcmp(c, "date")) { time_t t = time(0); char b[64]; strftime(b, sizeof b, "%A %d %B %Y %H:%M:%S", localtime(&t)); p("%s\n", b); }
     else if (!strcmp(c, "whoami")) p("user\n");
     else if (!strcmp(c, "hostname")) { char b[64]; gethostname(b, sizeof b); p("%s\n", b); }

@@ -37,11 +37,9 @@ const AppInfo APPS[NAPPS] = {
     { "terminal", "Terminal", "FLX Terminal" },
     { "notepad",  "\u00c9diteur de texte", "Code - OSS" },
     { "calc",     "Calculatrice", "Utilitaires" },
-    { "browser",  "Navigateur Web", "Firefox" },
     { "taskmgr",  "Gestionnaire de t\u00e2ches", "Processus actifs" },
     { "minesweeper", "Minesweeper", "Jeu classique" },
     { "proof",    "Informations syst\u00e8me", "FLX System Info" },
-    { "store",    "Centre d'applications", "FLX Store" },
 };
 int app_by_exe(const char *exe) {
     for (int i = 0; i < NAPPS; i++) if (!strcmp(APPS[i].exe, exe)) return i;
@@ -166,12 +164,6 @@ void icon_app(Canvas *c, int app, float x, float y, float s) {
     float cx = x + s / 2, cy = y + s / 2;
     switch (app) {
     case APP_EXPLORER: icon_folder(c, x, y, s); break;
-    case APP_STORE: {
-        g_vgrad(c, x + s * .10f, y + s * .12f, s * .80f, s * .76f, s * .14f, 0xFFE5A823, 0xFFBA7610);
-        g_rrect_line(c, x + s * .10f, y + s * .12f, s * .80f, s * .76f, s * .14f, 1.5f, 0xFFFFE28A);
-        icon_logo(c, cx, cy + s * .04f, s * .42f, 255);
-        break;
-    }
     case APP_SETTINGS: {
         for (int i = 0; i < 8; i++) {
             float a = i * (float)M_PI / 4;
@@ -204,14 +196,6 @@ void icon_app(Canvas *c, int app, float x, float y, float s) {
                 g_rrect(c, x + s * (.22f + k * .2f), y + s * (.42f + r * .17f), s * .15f, s * .12f, s * .03f, s * .03f,
                         r == 2 && k == 2 ? 0xFFFF8A3D : 0xFF8B95A3);
         break;
-    case APP_BROWSER: {
-        g_circle(c, cx, cy, s * .42f, 0xFF1A73E8);
-        g_vgrad(c, cx - s * .42f, cy - s * .42f, s * .84f, s * .84f, s * .42f, 0xFF35C8FF, 0xFF1D4FD8);
-        g_arc(c, cx, cy + s * .55f, s * .62f, -2.25f, -0.89f, s * .07f, 0xCCFFFFFF);
-        g_arc(c, cx, cy + s * .80f, s * .62f, -2.05f, -1.09f, s * .06f, 0x99FFFFFF);
-        g_circle(c, cx + s * .16f, cy - s * .16f, s * .08f, 0xEEFFFFFF);
-        break;
-    }
     case APP_TASKMGR:
         g_vgrad(c, x + s * .08f, y + s * .12f, s * .84f, s * .76f, s * .12f, 0xFFFFFFFF, 0xFFE8EEF5);
         g_rrect_line(c, x + s * .08f, y + s * .12f, s * .84f, s * .76f, s * .12f, fmaxf(1, s * .03f), 0xFFC7D0DC);

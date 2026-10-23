@@ -124,7 +124,7 @@ extern Theme TH;
 void theme_set(int dark, int accent, int wall);
 
 // ---- icons.c --------------------------------------------------------------------------------
-enum { APP_EXPLORER, APP_SETTINGS, APP_TERMINAL, APP_NOTEPAD, APP_CALC, APP_BROWSER, APP_TASKMGR, APP_MINES, APP_PROOF, APP_STORE, NAPPS };
+enum { APP_EXPLORER, APP_SETTINGS, APP_TERMINAL, APP_NOTEPAD, APP_CALC, APP_TASKMGR, APP_MINES, APP_PROOF, NAPPS };
 typedef struct { const char *exe, *title, *desc; } AppInfo;
 extern const AppInfo APPS[NAPPS];
 int app_by_exe(const char *exe);

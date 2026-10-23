@@ -37,7 +37,7 @@ static int dock_revealed = 1;
 #define SM_H 700
 #define SM_X ((SCR_W - SM_W) / 2)
 #define SM_Y (TBY - 12 - SM_H)
-static const char *PINNED[] = { "explorer", "browser", "terminal", "settings", "taskmgr", "store", "calc", "notepad" };
+static const char *PINNED[] = { "explorer", "terminal", "settings", "taskmgr", "calc", "notepad", "minesweeper", "proof" };
 #define NPIN 8
 typedef struct { const char *exe; int app; } Slot;
 static int slots(Slot *s);

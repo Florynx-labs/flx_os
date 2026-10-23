@@ -28,7 +28,7 @@ static char nettest[200]; static volatile int testing;
 static char search_query[64] = "";
 static int dock_autohide_setting = 0;
 static int dock_apps_setting = 255, window_scale_setting = 100;
-static const char *DOCK_APPS[8] = { "explorer", "browser", "terminal", "settings", "taskmgr", "store", "calc", "notepad" };
+static const char *DOCK_APPS[8] = { "explorer", "terminal", "settings", "taskmgr", "calc", "notepad", "minesweeper", "proof" };
 static char password_old[128], password_new[128], password_confirm[128], recovery_code[80], recovery_new[128];
 static char auth_feedback[144];
 static int thumbs_dark = -1;
@@ -239,12 +239,6 @@ static void page_accounts(Canvas *c, float x, float y, float w) {
     snprintf(inf, sizeof inf, "@%s · %s · Créé le %s", cur->username, cur->role, cur->created);
     text(c, F_REG, 13, 0, x + 105, y + 72, TH.sub, inf);
 
-    float btn_w = 140, btn_h = 34;
-    if (ui_button(x + w - btn_w - 20, y + 38, btn_w, btn_h, "Changer de rôle", B_STD)) {
-        const char *new_role = cur->is_admin ? "Standard" : "Administrateur";
-        user_update(cur->username, NULL, new_role);
-        app_redraw();
-    }
     y += ch1 + 24;
 
     text(c, F_SEMI, 16, 0, x, y + 18, TH.text, "Tous les comptes utilisateurs");
@@ -262,16 +256,13 @@ static void page_accounts(Canvas *c, float x, float y, float w) {
 
         if (is_cur) {
             text_r(c, F_SEMI, 13, 0, x + w - 24, y + 38, TH.accent, "Session active");
-        } else {
-            if (ui_button(x + w - 120, y + 16, 100, 32, "Basculer", B_ACCENT)) {
-                user_switch(u->username);
-                app_redraw();
-            }
         }
         y += uh + 12;
     }
 
     y += 8;
+    text(c, F_REG, 12, 0, x + 4, y + 14, TH.sub, "Les comptes séparés, rôles et basculements protégés seront gérés par le service de session.");
+    y += 28;
     text(c, F_SEMI, 16, 0, x, y + 18, TH.text, "Sécurité du compte actif");
     y += 32;
     ui_card(x, y, w, 186);
