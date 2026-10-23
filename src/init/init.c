@@ -13,6 +13,8 @@
 #include <sys/reboot.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <dirent.h>
+#include <pwd.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -39,6 +41,19 @@ static pid_t spawn(const char *path) {
         _exit(127);
     }
     return p;
+}
+
+static void own_user_tree(const char *path) {
+    struct stat st;
+    if (lstat(path, &st)) return;
+    if (S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode)) {
+        DIR *d = opendir(path);
+        if (d) { struct dirent *e; while ((e = readdir(d))) {
+            if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+            char child[512]; snprintf(child, sizeof child, "%s/%s", path, e->d_name); own_user_tree(child);
+        } closedir(d); }
+    }
+    chown(path, 1000, 1000);
 }
 
 static void power(int restart) {
@@ -77,7 +92,17 @@ int main(void) {
     if (ok) { say("init: no home disk (%s), using tmpfs", strerror(errno)); mount("tmpfs", "/home", "tmpfs", 0, 0); }
     else say("init: /home mounted from /dev/vda (ext2)");
     mkdir("/home/user", 0755);
+    mkdir("/home/user/.config", 0700);
+    mkdir("/home/user/Documents", 0755);
+    mkdir("/home/user/Pictures", 0755);
+    mkdir("/home/user/Desktop", 0755);
+    mkdir("/home/user/Downloads", 0755);
+    mkdir("/home/user/Music", 0755);
     mkdir("/home/.config", 0755);
+    mkdir("/home/.flx-system", 0700);
+    chmod("/home/.flx-system", 0700);
+    chown("/home/.flx-system", 0, 0);
+    own_user_tree("/home/user");
     signal(SIGINT, SIG_IGN);
     pid_t net = spawn("/bin/flx-netd");
     pid_t auth = spawn("/bin/flx-authd");

@@ -90,6 +90,9 @@ enum { F_LIGHT, F_SEMILIGHT, F_REG, F_SEMI, F_BOLD, NFONT };
 #define W600 F_SEMI
 #define W800 F_BOLD
 void font_init(void);
+int font_get_family(void);
+void font_set_family(int family);
+const char *font_family_name(int family);
 float text_w(int f, float px, float track, const char *s);
 float text(Canvas *c, int f, float px, float track, float x, float base, uint32_t col, const char *s);
 float text_n(Canvas *c, int f, float px, float track, float x, float base, uint32_t col, const char *s, int n);
@@ -108,7 +111,7 @@ void labelf(Canvas *c, int f, float px, float x, float y, float h, uint32_t col,
 
 // ---- theme ----------------------------------------------------------------------------------
 #define NACCENT 6
-#define NWALL 3
+#define NWALL 15
 extern const uint32_t ACCENTS[NACCENT];
 extern const char *ACCENT_NAMES[NACCENT];
 extern const char *WALL_NAMES[NWALL];
@@ -153,6 +156,11 @@ enum {
     M_POWER,       // a: 0 shutdown 1 restart
     M_RECENT,      // s=path (Start > Recommended)
     M_SET_DOCK,    // a=autohide
+    M_SET_FONT,    // a=font family index
+    M_SET_SCALE,   // a=window scale percentage
+    M_SET_DOCK_APPS, // a=bit mask of pinned app ids
+    M_AUTH_REQ,    // s=restricted authd command
+    M_AUTH_RES,    // s=authd result
     M_CONFIGURE = 100,  // a=w b=h c=state(0 normal 1 max 2 snapped)
     M_MOUSE,       // a=x b=y c=buttons d=ev e=button/wheel
     M_KEY,         // a=key b=mods s=utf8
@@ -161,6 +169,7 @@ enum {
     M_THEME,       // a=dark b=accent c=wallpaper
     M_CLIP_DATA,   // s
     M_RELEASE,     // a=buffer
+    M_FONT,        // a=font family index
 };
 enum { EV_NONE, EV_DOWN, EV_UP, EV_MOVE, EV_WHEEL, EV_LEAVE, EV_KEY };
 enum { K_BACKSPACE = 8, K_TAB = 9, K_ENTER = 10, K_ESC = 27, K_DEL = 127,
@@ -191,6 +200,10 @@ void app_clip_set(const char *s);
 char *app_clip_get(void);   // malloc'd (blocks briefly for the compositor's answer)
 void app_set_theme(int dark, int accent, int wall);
 void app_set_dock(int autohide);
+void app_set_font(int family);
+void app_set_scale(int percent);
+void app_set_dock_apps(int mask);
+int app_auth_request(const char *request, char *response, size_t response_size);
 void app_power(int restart);
 void app_recent(const char *path);
 void app_quit(void);
@@ -225,6 +238,7 @@ bool ui_icon_btn(float x, float y, float w, float h, int glyph, int active);
 bool ui_toggle(float x, float y, int *on);
 // single-line field: returns 1 on Enter, 2 when text changed
 int ui_field(int id, char *buf, int cap, float x, float y, float w, float h, const char *ph);
+int ui_password_field(int id, char *buf, int cap, float x, float y, float w, float h, const char *ph);
 typedef struct { float pos, max; int drag; float grab; } Scroll;
 void ui_scroll(Scroll *s, float x, float y, float w, float h, float content_h);   // wheel + bar
 void ui_card(float x, float y, float w, float h);

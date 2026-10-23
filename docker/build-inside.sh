@@ -83,6 +83,7 @@ mv "$R/bin/init" "$R/sbin/init"
 strip "$R"/bin/* "$R"/sbin/init
 cp /src/third_party/fonts/*.ttf "$R/share/fonts/"
 cp /src/third_party/fonts/LICENSE.txt "$R/share/fonts/OFL.txt"
+cp /src/third_party/fonts/LIBERATION-LICENSE.txt "$R/share/fonts/LIBERATION-LICENSE.txt"
 
 # Real Wallpapers and Real Icons from assets:
 python3 /src/scripts/prepare_assets.py
@@ -103,6 +104,14 @@ ID_LIKE=linux
 HOME_URL="https://github.com/Florynx-labs"
 OS
 echo "flx-os" > "$R/etc/hostname"
+cat > "$R/etc/passwd" <<'PASSWD'
+root:x:0:0:root:/root:/bin/sh
+flx:x:1000:1000:FLX Desktop:/home/user:/bin/sh
+PASSWD
+cat > "$R/etc/group" <<'GROUP'
+root:x:0:
+flx:x:1000:
+GROUP
 sh /src/scripts/loc.sh /src > "$R/share/proof/loc.txt"
 echo "${FLX_BUILD_TIME:-$(date '+%Y-%m-%d %H:%M')}" > "$R/share/proof/build.txt"
 FLX_BUILD_TIME="${FLX_BUILD_TIME:-}" sh /src/scripts/verify_no_toolkits.sh "$R" > "$R/share/proof/scan.txt" || { cat "$R/share/proof/scan.txt"; echo "[build] FLX OS TOOLKIT SCAN FAILED"; exit 1; }
@@ -124,8 +133,12 @@ cat "$R/share/proof/scan.txt" | head -3
 
 # ---- persistent home disk template (ext2) --------------------------------
 H=/kbuild/home
-rm -rf "$H"; mkdir -p "$H/user/Documents" "$H/user/Pictures" "$H/user/Desktop" "$H/user/Downloads" "$H/user/Music" "$H/.config"
+rm -rf "$H"; mkdir -p "$H/user/.config" "$H/user/Documents" "$H/user/Pictures" "$H/user/Desktop" "$H/user/Downloads" "$H/user/Music" "$H/.config" "$H/.flx-system"
 cp -r /src/home-skel/. "$H/user/" 2>/dev/null || true
+chown -R 1000:1000 "$H/user"
+chmod 0700 "$H/user"
+chmod 0700 "$H/user/.config"
+chmod 0700 "$H/.flx-system"
 rm -f "$OUT/home.img"
 mke2fs -q -t ext2 -L flxhome -d "$H" "$OUT/home.img" 64M
 echo "[build] FLX OS ($KARCH) done: $(ls -la $OUT_IMAGE $OUT/initramfs.cpio | awk '{print $5, $9}' | tr '\n' ' ')"

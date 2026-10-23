@@ -27,12 +27,21 @@ static Image *thumbs[NWALL];
 static char nettest[200]; static volatile int testing;
 static char search_query[64] = "";
 static int dock_autohide_setting = 0;
+static int dock_apps_setting = 255, window_scale_setting = 100;
+static const char *DOCK_APPS[8] = { "explorer", "browser", "terminal", "settings", "taskmgr", "store", "calc", "notepad" };
+static char password_old[128], password_new[128], password_confirm[128], recovery_code[80], recovery_new[128];
+static char auth_feedback[144];
+static int thumbs_dark = -1;
 #define NAVW 260
 
 static void load_thumbs(void) {
-    static const char *names[NWALL] = { "bloom", "aurora", "dune" };
+    if (thumbs_dark == TH.dark) return;
+    for (int i = 0; i < NWALL; i++) { image_free(thumbs[i]); thumbs[i] = NULL; }
+    thumbs_dark = TH.dark;
+    static const char *names[NWALL] = { "dark_aurora", "dark_eclipse", "dark_flow", "dark_glass", "dark_horizon", "dark_obsidian", "world_alpine", "world_coast", "world_sahara", "light_aurora", "light_eclipse", "light_flow", "light_glass", "light_horizon", "light_obsidian" };
     for (int i = 0; i < NWALL; i++) {
-        char p[64]; snprintf(p, sizeof p, "/share/wallpapers/%s.raw", names[i]);
+        const char *name = i >= 6 && i <= 8 ? names[i] : names[i + (TH.dark ? 0 : 9)];
+        char p[80]; snprintf(p, sizeof p, "/share/wallpapers/%s.raw", name);
         size_t n; uint32_t *d = (uint32_t *)read_file(p, &n);
         if (!d || n < 12) { free(d); continue; }
         int w = d[1], h = d[2], tw = 240, th = 135;
@@ -133,12 +142,45 @@ static void page_display(Canvas *c, float x, float y, float w) {
     if (ui_button(x + w - btn_w - 20, y + 19, btn_w, btn_h, dock_autohide_setting ? "Activé" : "Désactivé", dock_autohide_setting ? B_ACCENT : B_STD)) {
         dock_autohide_setting = !dock_autohide_setting;
         char buf[32]; snprintf(buf, sizeof buf, "autohide=%d\n", dock_autohide_setting);
-        FILE *f = fopen("/home/.config/dock.conf", "w");
+        FILE *f = fopen("/home/user/.config/dock.conf", "w");
         if (f) { fputs(buf, f); fclose(f); sync(); }
         app_set_dock(dock_autohide_setting);
         MARK("SETTINGS dock_autohide %d", dock_autohide_setting);
     }
     y += 86;
+
+    ui_card(x, y, w, 70);
+    icon_glyph(c, G_DISPLAY, x + 32, y + 35, 20, TH.text);
+    text(c, F_SEMI, 15, 0, x + 64, y + 29, TH.text, "Taille des fenêtres d’applications");
+    char scale_label[24]; snprintf(scale_label, sizeof scale_label, "%d%%", window_scale_setting);
+    text_r(c, F_SEMI, 14, 0, x + w - 124, y + 42, TH.accent, scale_label);
+    if (ui_button(x + w - 104, y + 19, 38, 32, "−", B_STD)) { window_scale_setting = maxi(80, window_scale_setting - 10); app_set_scale(window_scale_setting); }
+    if (ui_button(x + w - 58, y + 19, 38, 32, "+", B_STD)) { window_scale_setting = mini(140, window_scale_setting + 10); app_set_scale(window_scale_setting); }
+    y += 84;
+
+    text(c, F_SEMI, 16, 0, x, y + 18, TH.text, "Applications épinglées au dock");
+    y += 30;
+    for (int i = 0; i < 8; i++) {
+        float bx = x + (i % 4) * (w / 4), by = y + (i / 4) * 46;
+        int app = app_by_exe(DOCK_APPS[i]);
+        if (app < 0) continue;
+        bool on = (dock_apps_setting & (1 << i)) != 0;
+        ui_card(bx, by, w / 4 - 8, 38);
+        icon_app(c, app, bx + 8, by + 6, 26);
+        text(c, F_REG, 11, 0, bx + 40, by + 24, TH.text, APPS[app].title);
+        if (on) icon_glyph(c, G_CHECK, bx + w / 4 - 28, by + 19, 14, TH.accent);
+        if (ui_click(bx, by, w / 4 - 8, 38)) { dock_apps_setting ^= 1 << i; app_set_dock_apps(dock_apps_setting); }
+    }
+    y += 104;
+
+    text(c, F_SEMI, 16, 0, x, y + 18, TH.text, "Police de l’interface");
+    y += 30;
+    for (int i = 0; i < 4; i++) {
+        float bx = x + i * (w / 4), bw = w / 4 - 8;
+        bool on = font_get_family() == i;
+        if (ui_button(bx, y, bw, 38, font_family_name(i), on ? B_ACCENT : B_STD)) app_set_font(i);
+    }
+    y += 52;
 
     // Theme selector
     text(c, F_SEMI, 16, 0, x, y + 18, TH.text, "Mode d'affichage");
@@ -173,12 +215,13 @@ static void page_display(Canvas *c, float x, float y, float w) {
     text(c, F_SEMI, 16, 0, x, y + 18, TH.text, "Fonds d'écran réels");
     y += 34;
     for (int i = 0; i < NWALL; i++) {
-        float cx = x + i * 256;
+        float cx = x + (i % 3) * 256;
+        float cy = y + (i / 3) * 174;
         bool on = (TH.wall == i);
-        if (thumbs[i]) g_image(c, thumbs[i], cx, y, 240, 135, 8, 255);
-        if (on) g_rrect_line(c, cx - 4, y - 4, 248, 143, 10, 2.5f, TH.accent);
-        text_c(c, F_REG, 13, 0, cx + 120, y + 158, TH.text, WALL_NAMES[i]);
-        if (ui_click(cx, y, 240, 135) && !on) { app_set_theme(TH.dark, TH.accent_i, i); }
+        if (thumbs[i]) g_image(c, thumbs[i], cx, cy, 240, 135, 8, 255);
+        if (on) g_rrect_line(c, cx - 4, cy - 4, 248, 143, 10, 2.5f, TH.accent);
+        text_c(c, F_REG, 13, 0, cx + 120, cy + 158, TH.text, WALL_NAMES[i]);
+        if (ui_click(cx, cy, 240, 135) && !on) { app_set_theme(TH.dark, TH.accent_i, i); }
     }
 }
 
@@ -227,6 +270,61 @@ static void page_accounts(Canvas *c, float x, float y, float w) {
         }
         y += uh + 12;
     }
+
+    y += 8;
+    text(c, F_SEMI, 16, 0, x, y + 18, TH.text, "Sécurité du compte actif");
+    y += 32;
+    ui_card(x, y, w, 186);
+    text(c, F_SEMI, 14, 0, x + 18, y + 24, TH.text, "Changer le mot de passe");
+    const char *ph_old = "Mot de passe actuel", *ph_new = "Nouveau mot de passe (10 caractères minimum)", *ph_confirm = "Confirmer le nouveau mot de passe";
+    ui_password_field(30, password_old, sizeof password_old, x + 18, y + 38, w - 36, 30, ph_old);
+    ui_password_field(31, password_new, sizeof password_new, x + 18, y + 74, w - 36, 30, ph_new);
+    ui_password_field(32, password_confirm, sizeof password_confirm, x + 18, y + 110, w - 36, 30, ph_confirm);
+    if (ui_button(x + 18, y + 148, 190, 30, "Enregistrer le mot de passe", B_ACCENT)) {
+        if (strcmp(password_new, password_confirm)) snprintf(auth_feedback, sizeof auth_feedback, "Les deux nouveaux mots de passe diffèrent.");
+        else {
+            char old_hex[257], new_hex[513], req[800], response[128];
+            size_t j = 0; for (const unsigned char *p = (void *)password_old; *p && j + 2 < sizeof old_hex; p++) j += snprintf(old_hex + j, sizeof old_hex - j, "%02x", *p); old_hex[j] = 0;
+            j = 0; for (const unsigned char *p = (void *)password_new; *p && j + 2 < sizeof new_hex; p++) j += snprintf(new_hex + j, sizeof new_hex - j, "%02x", *p); new_hex[j] = 0;
+            snprintf(req, sizeof req, "CHANGE %s %s", old_hex, new_hex);
+            if (!app_auth_request(req, response, sizeof response) && !strcmp(response, "OK")) snprintf(auth_feedback, sizeof auth_feedback, "Mot de passe mis à jour.");
+            else snprintf(auth_feedback, sizeof auth_feedback, "Mot de passe actuel incorrect ou requête refusée.");
+            memset(password_old, 0, sizeof password_old); memset(password_new, 0, sizeof password_new); memset(password_confirm, 0, sizeof password_confirm);
+            memset(old_hex, 0, sizeof old_hex); memset(new_hex, 0, sizeof new_hex); memset(req, 0, sizeof req); memset(response, 0, sizeof response);
+        }
+        app_redraw();
+    }
+    y += 202;
+    ui_card(x, y, w, 154);
+    text(c, F_SEMI, 14, 0, x + 18, y + 24, TH.text, "Récupération du compte");
+    text(c, F_REG, 11, 0, x + 18, y + 42, TH.sub, "Créez un code de secours après avoir confirmé votre mot de passe actuel.");
+    ui_password_field(33, password_old, sizeof password_old, x + 18, y + 50, w - 36, 30, ph_old);
+    if (ui_button(x + 18, y + 88, 210, 30, "Générer un code de secours", B_STD)) {
+        char hex[257], req[300], response[128]; size_t j = 0;
+        for (const unsigned char *p = (void *)password_old; *p && j + 2 < sizeof hex; p++) j += snprintf(hex + j, sizeof hex - j, "%02x", *p);
+        hex[j] = 0; snprintf(req, sizeof req, "ROTATE %s", hex);
+        if (!app_auth_request(req, response, sizeof response) && !strncmp(response, "RECOVERY ", 9)) snprintf(auth_feedback, sizeof auth_feedback, "Code à conserver : %s", response + 9);
+        else snprintf(auth_feedback, sizeof auth_feedback, "Mot de passe actuel incorrect ou requête refusée.");
+        memset(password_old, 0, sizeof password_old); memset(hex, 0, sizeof hex); memset(req, 0, sizeof req); memset(response, 0, sizeof response);
+        app_redraw();
+    }
+    y += 170;
+    ui_card(x, y, w, 126);
+    text(c, F_SEMI, 14, 0, x + 18, y + 24, TH.text, "Récupérer avec un code de secours");
+    ui_field(34, recovery_code, sizeof recovery_code, x + 18, y + 36, w - 36, 30, "Code de secours");
+    ui_password_field(35, recovery_new, sizeof recovery_new, x + 18, y + 72, w - 240, 30, "Nouveau mot de passe");
+    if (ui_button(x + w - 204, y + 72, 186, 30, "Réinitialiser", B_ACCENT)) {
+        char token_hex[257], pass_hex[513], req[800], response[128]; size_t j = 0;
+        for (const unsigned char *p = (void *)recovery_code; *p && j + 2 < sizeof token_hex; p++) j += snprintf(token_hex + j, sizeof token_hex - j, "%02x", *p);
+        token_hex[j] = 0; j = 0;
+        for (const unsigned char *p = (void *)recovery_new; *p && j + 2 < sizeof pass_hex; p++) j += snprintf(pass_hex + j, sizeof pass_hex - j, "%02x", *p);
+        pass_hex[j] = 0; snprintf(req, sizeof req, "RECOVER %s %s", token_hex, pass_hex);
+        if (!app_auth_request(req, response, sizeof response) && !strcmp(response, "OK")) snprintf(auth_feedback, sizeof auth_feedback, "Mot de passe réinitialisé. Le code de secours a été consommé.");
+        else snprintf(auth_feedback, sizeof auth_feedback, "Code de secours invalide ou requête refusée.");
+        memset(recovery_code, 0, sizeof recovery_code); memset(recovery_new, 0, sizeof recovery_new); memset(token_hex, 0, sizeof token_hex); memset(pass_hex, 0, sizeof pass_hex); memset(req, 0, sizeof req); memset(response, 0, sizeof response);
+        app_redraw();
+    }
+    text(c, F_REG, 12, 0, x + 4, y + 144, TH.accent, auth_feedback);
 }
 
 // ---- Page: Applications (Installed & Uninstall) ---------------------------------------
@@ -273,6 +371,7 @@ static void page_network(Canvas *c, float x, float y, float w) {
 
 // ---- Main Drawing --------------------------------------------------------------------
 static void draw(Canvas *c) {
+    load_thumbs();
     float W = U.w, H = U.h;
 
     // Top Search Bar (Matches settings_page_exemple.png)
@@ -326,17 +425,19 @@ static void draw(Canvas *c) {
         break;
     }
     g_setclip(c, s0);
-    ui_scroll(&sc, NAVW, ctop, W - NAVW, H - ctop, 600);
+    ui_scroll(&sc, NAVW, ctop, W - NAVW, H - ctop, page == P_DISPLAY ? 1500.0f : page == P_ACCOUNTS ? 1500.0f : 600.0f);
 }
 
 static void init(int argc, char **argv) {
     user_init();
     load_thumbs();
-    char *ds = read_file("/home/.config/dock.conf", 0);
-    if (!ds) ds = read_file("/home/.config/flx.conf", 0);
+    char *ds = read_file("/home/user/.config/dock.conf", 0);
+    if (!ds) ds = read_file("/home/user/.config/flx.conf", 0);
     if (ds) {
         char *p = strstr(ds, "autohide=");
         if (p) dock_autohide_setting = atoi(p + 9);
+        if ((p = strstr(ds, "dockapps="))) dock_apps_setting = atoi(p + 9) & 255;
+        if ((p = strstr(ds, "scale="))) window_scale_setting = mini(140, maxi(80, atoi(p + 6)));
         free(ds);
     }
     if (argc > 1) {

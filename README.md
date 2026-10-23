@@ -1,5 +1,7 @@
 # FLX OS
 
+<p align="center"><img src="assets/flx_logo.png" alt="Logo FLX OS" width="360"></p>
+
 > **Plus qu'un système. Une vision.**
 > Un système d'exploitation open-source, rapide et sécurisé par **Florynx Labs**.
 
@@ -115,8 +117,15 @@ automatiquement au build par `scripts/prepare_assets.py` :
 - **Fonds d'écran** → `build/wallpapers/*.raw` (format FLXW, 1920×1080 ARGB32)
 - **Icônes** → `build/icons/*.png` (128×128 RGBA)
 
-Les noms de wallpapers attendus par le compositeur : `bloom`, `aurora`, `dune`, `lock`.
-Si un fichier `.raw` est manquant, `gen_wallpaper` génère un dégradé procédural de secours.
+Le pack `assets/FLX_OS_Wallpaper_Pack/` est intégré aux paramètres : six fonds sont
+disponibles en clair ou sombre, ainsi que trois paysages Worlds communs aux deux thèmes.
+Les PNG sont convertis en fichiers `.raw` au build. Un dégradé procédural sert de secours.
+
+Les paramètres d’affichage permettent de choisir parmi quatre familles de polices,
+modifier la taille des fenêtres ouvertes et épingler/désépingler des applications du dock.
+Les applications sont exécutées sous un compte non privilégié et le service d’authentification
+est isolé dans un répertoire root-only du disque persistant. La gestion de plusieurs comptes
+Linux et leurs sessions isolées restent en cours de développement.
 
 ---
 

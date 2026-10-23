@@ -2,17 +2,23 @@
 // memfd buffers, composites windows with rounded corners, soft shadows and Mica titlebars,
 // and implements focus, drag, resize, minimize/maximize, snap layouts and animations.
 #include "comp.h"
+#include "auth_client.h"
+#include <fcntl.h>
 #include <signal.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
+#include <grp.h>
+#include <pwd.h>
 #include <unistd.h>
 
 Win wins[MAXWIN];
 int zord[MAXWIN], nz;
 Win *focus;
 char *clipboard;
+int ui_scale_percent = 100;
 static int next_id = 1, cascade;
 #define TOP 36             // top bar height
 #define WORK_Y0 TOP
@@ -94,6 +100,29 @@ void wm_update_dock_autohide(void) {
         }
     }
 }
+void wm_set_scale(int percent) {
+    percent = mini(140, maxi(80, percent));
+    if (percent == ui_scale_percent) return;
+    float factor = percent / (float)ui_scale_percent;
+    ui_scale_percent = percent;
+    for (int i = 0; i < MAXWIN; i++) {
+        Win *w = &wins[i];
+        if (!w->used) continue;
+        if (w->state == 1) {
+            w->rw = fminf(SCR_W - 40, fmaxf(200, w->rw * factor));
+            w->rh = fminf(WORK_Y1 - WORK_Y0 - TB - 40, fmaxf(120, w->rh * factor));
+            continue;
+        }
+        float nw = fminf(SCR_W - 40, fmaxf(200, w->w * factor));
+        float nh = fminf(WORK_Y1 - WORK_Y0 - TB - 40, fmaxf(120, w->h * factor));
+        float nx = clampf(w->x + (w->w - nw) * .5f, 8, SCR_W - 8 - nw);
+        float ny = clampf(w->y + (w->h - nh) * .5f, WORK_Y0 + TB + 8, WORK_Y1 - 10 - nh);
+        if (w->state == 0) { w->rx = nx; w->ry = ny; w->rw = nw; w->rh = nh; }
+        else { w->rw = fminf(SCR_W - 40, fmaxf(200, w->rw * factor)); w->rh = fminf(WORK_Y1 - WORK_Y0 - TB - 40, fmaxf(120, w->rh * factor)); }
+        set_rect(w, nx, ny, nw, nh, w->state);
+    }
+    dirty = 1;
+}
 void wm_snap(Win *w, float x, float y, float ww, float hh, const char *name) {
     if (w->state == 0) { w->rx = w->x; w->ry = w->y; w->rw = w->w; w->rh = w->h; }
     set_rect(w, x, y + TB, ww, hh - TB, 2);
@@ -146,6 +175,10 @@ void wm_restore(Win *w) {
 void wm_close(Win *w) { msg_send(w->fd, M_CLOSE_REQ, 0, 0, 0, 0, 0, 0, -1); }
 
 void launch(const char *exe, const char *arg) {
+    // Never let an untrusted app turn the privileged compositor into an
+    // arbitrary root exec helper. The launched process always enters the
+    // isolated FLX desktop account before executing an allow-listed app.
+    if (!exe || app_by_exe(exe) < 0) { LOG("wm: blocked non-app launch request"); return; }
     // single-instance apps: focus the running one
     if (!strcmp(exe, "settings") || !strcmp(exe, "taskmgr") || !strcmp(exe, "calc") || !strcmp(exe, "minesweeper")) {
         for (int i = 0; i < MAXWIN; i++) if (wins[i].used && !wins[i].closing && !strcmp(wins[i].exe, exe)) { wm_restore(&wins[i]); return; }
@@ -156,7 +189,17 @@ void launch(const char *exe, const char *arg) {
     pid_t p = fork();
     if (p == 0) {
         sigset_t s; sigemptyset(&s); sigprocmask(SIG_SETMASK, &s, 0);
-        chdir("/home/user");
+        // Do not leak the compositor's DRM, input, listener, or console read
+        // descriptors across exec. Applications get only fresh /dev/null stdio.
+        for (int fd = 3; fd < 4096; fd++) close(fd);
+        close(0); close(1); close(2);
+        int nullfd = open("/dev/null", O_RDWR);
+        if (nullfd < 0) _exit(126);
+        if (nullfd != 0) { dup2(nullfd, 0); close(nullfd); }
+        dup2(0, 1); dup2(0, 2);
+        if (chdir("/home/user")) _exit(126);
+        if (setgroups(0, NULL) || setgid(1000) || setuid(1000) || prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) _exit(126);
+        setenv("HOME", "/home/user", 1); setenv("USER", "flx", 1);
         if (arg && *arg) execl(path, exe, arg, (char *)0);
         else execl(path, exe, (char *)0);
         _exit(127);
@@ -175,6 +218,9 @@ void wm_accept(int lfd) {
     for (int i = 0; i < MAXWIN; i++) if (!wins[i].used) {
         memset(&wins[i], 0, sizeof wins[i]);
         wins[i].used = 1; wins[i].fd = fd; wins[i].front = -1; wins[i].id = next_id++;
+        wins[i].peer_uid = (uid_t)-1;
+        struct ucred cred; socklen_t clen = sizeof cred;
+        if (!getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &clen)) wins[i].peer_uid = cred.uid;
         return;
     }
     close(fd);
@@ -216,13 +262,14 @@ void wm_client(Win *w) {
             snprintf(w->exe, sizeof w->exe, "%s", m.s);
             w->app = app_by_exe(w->exe);
             snprintf(w->title, sizeof w->title, "%s", w->app >= 0 ? APPS[w->app].title : w->exe);
-            w->w = mini(maxi(m.b, 200), SCR_W - 40); w->h = mini(maxi(m.c, 120), WORK_Y1 - WORK_Y0 - TB - 40);
+            w->w = mini(maxi((int)(m.b * ui_scale_percent / 100.0f), 200), SCR_W - 40); w->h = mini(maxi((int)(m.c * ui_scale_percent / 100.0f), 120), WORK_Y1 - WORK_Y0 - TB - 40);
             w->x = roundf((SCR_W - w->w) / 2 + (cascade % 6) * 32 - 80);
             w->y = roundf(WORK_Y0 + TB + 40 + (cascade % 6) * 30);
             if (w->y + w->h > WORK_Y1 - 10) w->y = fmaxf(WORK_Y0 + TB + 8, WORK_Y1 - 10 - w->h);
             if (w->x < 8) w->x = 8;
             cascade++;
             msg_send(w->fd, M_THEME, TH.dark, TH.accent_i, TH.wall, 0, 0, 0, -1);
+            msg_send(w->fd, M_FONT, font_get_family(), 0, 0, 0, 0, 0, -1);
             configure(w);
             z_top(w);
             MARK("WINDOW_OPEN %s %d", w->exe, w->id);
@@ -255,6 +302,7 @@ void wm_client(Win *w) {
             break;
         case M_CLOSE_ME: wm_close(w); break;
         case M_POWER:
+            if (w->peer_uid != 0) { MARK("SECURITY blocked app power request uid=%u", (unsigned)w->peer_uid); break; }
             MARK("POWER %s", m.a ? "restart" : "shutdown");
             settings_save();
             sync();
@@ -266,6 +314,27 @@ void wm_client(Win *w) {
             wm_update_dock_autohide();
             dirty = 1;
             MARK("DOCK autohide=%d", dock_autohide);
+            break;
+        case M_SET_FONT:
+            if (w->peer_uid != 0) {
+                font_set_family(m.a);
+                settings_save();
+                for (int i = 0; i < MAXWIN; i++) if (wins[i].used && !wins[i].closing) msg_send(wins[i].fd, M_FONT, font_get_family(), 0, 0, 0, 0, 0, -1);
+            }
+            break;
+        case M_SET_SCALE:
+            if (w->peer_uid != 0) { wm_set_scale(m.a); settings_save(); MARK("WINDOW_SCALE %d", ui_scale_percent); }
+            break;
+        case M_SET_DOCK_APPS:
+            if (w->peer_uid != 0) { dock_app_mask = m.a & 255; settings_save(); dirty = 1; MARK("DOCK apps=%d", dock_app_mask); }
+            break;
+        case M_AUTH_REQ:
+            if (w->peer_uid != 0) {
+                char result[128] = "ERROR";
+                if (!strncmp(m.s, "CHANGE ", 7) || !strncmp(m.s, "ROTATE ", 7) || !strncmp(m.s, "RECOVER ", 8))
+                    flx_auth_request(m.s, result, sizeof result);
+                msg_send(w->fd, M_AUTH_RES, 0, 0, 0, 0, 0, result, -1);
+            }
             break;
         }
     }

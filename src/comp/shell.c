@@ -3,6 +3,7 @@
 // and the Alt+Tab switcher. Settings persist on the home disk.
 #include "comp.h"
 #include "auth_client.h"
+#include <fcntl.h>
 #include <unistd.h>
 
 int phase = PH_BOOT, dirty = 1;
@@ -10,6 +11,7 @@ int start_open, widgets_open, alttab_open, clock_flyout_open;
 float start_p, widgets_p, clock_flyout_p;
 int hover_id = -1;
 static double boot_t0, unlock_t = -1, lock_shown_t;
+static int session_authenticated, suspend_pending, resume_fast_unlock;
 static float lock_drag; static float lock_x0; static int lock_down;
 static int lock_power_open;
 enum { H_LOCK_SHUT = 210, H_LOCK_RESTART, H_LOCK_SLEEP, H_LOCK_USER, H_LOCK_SUBMIT };
@@ -24,6 +26,7 @@ static int start_marked;
 static double tip_t; static int tip_id = -1;
 
 int dock_autohide = 0;
+int dock_app_mask = 255;
 static float dock_p = 1.0f;
 static int dock_revealed = 1;
 
@@ -36,9 +39,11 @@ static int dock_revealed = 1;
 #define SM_Y (TBY - 12 - SM_H)
 static const char *PINNED[] = { "explorer", "browser", "terminal", "settings", "taskmgr", "store", "calc", "notepad" };
 #define NPIN 8
+typedef struct { const char *exe; int app; } Slot;
+static int slots(Slot *s);
 enum {
     H_NONE, H_START_BTN, H_SEARCH_BTN, H_WIDGETS_BTN, H_TOP_SEARCH, H_NET, H_CLOCK, H_VOL,
-    H_START_PANEL, H_START_SEARCH, H_POWER, H_PWR_LOCK, H_PWR_RESTART, H_PWR_SHUT, H_USER, H_ALLAPPS,
+    H_START_PANEL, H_START_SEARCH, H_POWER, H_PWR_LOCK, H_PWR_SLEEP, H_PWR_RESTART, H_PWR_SHUT, H_USER, H_ALLAPPS,
     H_CLOCK_PANEL = 18,
     H_QS_PANEL = 20, H_QS_NET, H_QS_DARK, H_QS_ACCENT, H_QS_WALL, H_QS_LOCK, H_QS_SETTINGS, H_QS_VOL, H_QS_BRIGHT, H_QS_GEAR,
     H_DM_PANEL = 35, H_DM_PERSONAL, H_DM_DISPLAY, H_DM_TERMINAL, H_DM_REFRESH,
@@ -56,36 +61,41 @@ int hit_at(float x, float y) {
 
 // ---- settings & recent files ------------------------------------------------------------------------
 void settings_save(void) {
-    char *s = strfmt("dark=%d\naccent=%d\nwall=%d\nautohide=%d\n", TH.dark, TH.accent_i, TH.wall, dock_autohide);
-    write_file("/home/.config/flx.conf", s, strlen(s));
+    char *s = strfmt("dark=%d\naccent=%d\nwall=%d\nautohide=%d\nfont=%d\nscale=%d\ndockapps=%d\n", TH.dark, TH.accent_i, TH.wall, dock_autohide, font_get_family(), ui_scale_percent, dock_app_mask);
+    write_file("/home/user/.config/flx.conf", s, strlen(s));
     free(s);
-    char ds[32]; snprintf(ds, sizeof ds, "autohide=%d\n", dock_autohide);
-    write_file("/home/.config/dock.conf", ds, strlen(ds));
+    char ds[96]; snprintf(ds, sizeof ds, "autohide=%d\ndockapps=%d\nscale=%d\n", dock_autohide, dock_app_mask, ui_scale_percent);
+    write_file("/home/user/.config/dock.conf", ds, strlen(ds));
     sync();
 }
 static void settings_load(void) {
     int d = 1, a = 0, w = 0;  // FLX OS defaults: dark mode, gold accent, sunset city
-    char *s = read_file("/home/.config/flx.conf", 0);
-    if (!s) s = read_file("/home/.config/w12.conf", 0);  // backward compat
+    char *s = read_file("/home/user/.config/flx.conf", 0);
+    if (!s) s = read_file("/home/user/.config/w12.conf", 0);  // backward compat
     if (s) {
         char *p;
         if ((p = strstr(s, "dark="))) d = atoi(p + 5);
         if ((p = strstr(s, "accent="))) a = atoi(p + 7);
         if ((p = strstr(s, "wall="))) w = atoi(p + 5);
         if ((p = strstr(s, "autohide="))) dock_autohide = atoi(p + 9);
+        if ((p = strstr(s, "scale="))) ui_scale_percent = mini(140, maxi(80, atoi(p + 6)));
+        if ((p = strstr(s, "font="))) font_set_family(atoi(p + 5));
+        if ((p = strstr(s, "dockapps="))) dock_app_mask = atoi(p + 9) & ((1 << NPIN) - 1);
         free(s);
     }
-    char *ds = read_file("/home/.config/dock.conf", 0);
+    char *ds = read_file("/home/user/.config/dock.conf", 0);
     if (ds) {
         char *p = strstr(ds, "autohide=");
         if (p) dock_autohide = atoi(p + 9);
+        if ((p = strstr(ds, "scale="))) ui_scale_percent = mini(140, maxi(80, atoi(p + 6)));
+        if ((p = strstr(ds, "dockapps="))) dock_app_mask = atoi(p + 9) & 255;
         free(ds);
     }
     theme_set(d, a, w);
 }
 static void recent_load(void) {
     nrecent = 0;
-    char *s = read_file("/home/.config/recent", 0);
+    char *s = read_file("/home/user/.config/recent", 0);
     if (!s) return;
     for (char *l = strtok(s, "\n"); l && nrecent < 8; l = strtok(0, "\n")) snprintf(recent[nrecent++], 256, "%s", l);
     free(s);
@@ -94,7 +104,7 @@ void recent_add(const char *path) {
     char out[8 * 260] = "";
     int n = snprintf(out, sizeof out, "%s\n", path);
     for (int i = 0, k = 1; i < nrecent && k < 8; i++) if (strcmp(recent[i], path)) { n += snprintf(out + n, sizeof out - n, "%s\n", recent[i]); k++; }
-    write_file("/home/.config/recent", out, n);
+    write_file("/home/user/.config/recent", out, n);
     recent_load();
     dirty = 1;
 }
@@ -103,10 +113,12 @@ void recent_add(const char *path) {
 Canvas *wall, *wall_blur;
 static int wall_loaded = -1;
 static void load_wallpaper(void) {
-    if (wall_loaded == TH.wall) return;
-    static const char *names[NWALL] = { "bloom", "aurora", "dune" };
+    int key = TH.wall + TH.dark * NWALL;
+    if (wall_loaded == key) return;
+    static const char *names[NWALL] = { "dark_aurora", "dark_eclipse", "dark_flow", "dark_glass", "dark_horizon", "dark_obsidian", "world_alpine", "world_coast", "world_sahara", "light_aurora", "light_eclipse", "light_flow", "light_glass", "light_horizon", "light_obsidian" };
     char p[64];
-    snprintf(p, sizeof p, "/share/wallpapers/%s.raw", names[TH.wall]);
+    const char *name = TH.wall >= 6 && TH.wall <= 8 ? names[TH.wall] : names[TH.wall + (TH.dark ? 0 : 9)];
+    snprintf(p, sizeof p, "/share/wallpapers/%s.raw", name);
     size_t n;
     uint32_t *d = (uint32_t *)read_file(p, &n);
     if (!wall) { wall = canvas_new(SCR_W, SCR_H); wall_blur = canvas_new(SCR_W, SCR_H); }
@@ -116,7 +128,7 @@ static void load_wallpaper(void) {
     double t = now();
     g_blur_full(wall_blur, wall, 2);
     LOG("shell: wallpaper %s, blur cache built in %.1f ms", names[TH.wall], (now() - t) * 1000);
-    wall_loaded = TH.wall;
+    wall_loaded = key;
 }
 
 void shell_init(void) {
@@ -124,13 +136,37 @@ void shell_init(void) {
     load_wallpaper();
     recent_load();
     auth_status = flx_auth_status();
+    for (int i = 0; auth_status < 0 && i < 30; i++) { usleep(50000); auth_status = flx_auth_status(); }
     if (auth_status < 0) snprintf(auth_message, sizeof auth_message, "Service d’authentification indisponible.");
-    boot_t0 = now();
+    if (auth_status == 0) { phase = PH_DESK; session_authenticated = 1; dirty = 1; }
+    else boot_t0 = now();
     MARK("READY boot");
 }
 
 void lock_now(void) { phase = PH_LOCK; unlock_t = -1; lock_drag = 0; auth_dialog = auth_confirm = 0; auth_password[0] = auth_first[0] = auth_message[0] = 0; auth_status = flx_auth_status(); lock_shown_t = now(); close_panels(); dirty = 1; MARK("READY lock"); }
-static void unlock(void) { if (unlock_t < 0) { auth_dialog = 0; auth_password[0] = auth_first[0] = 0; unlock_t = now(); MARK("UNLOCK authenticated"); } }
+static void unlock(void) { if (unlock_t < 0) { session_authenticated = 1; resume_fast_unlock = 0; auth_dialog = 0; auth_password[0] = auth_first[0] = 0; unlock_t = now(); MARK("UNLOCK authenticated"); } }
+
+static void request_suspend(void) {
+    resume_fast_unlock = session_authenticated;
+    suspend_pending = 1;
+    phase = PH_LOCK; unlock_t = -1; lock_drag = 0; auth_dialog = auth_confirm = 0;
+    auth_password[0] = auth_first[0] = auth_message[0] = 0;
+    auth_status = flx_auth_status(); lock_shown_t = now(); close_panels(); dirty = 1;
+    MARK("POWER suspend requested; authenticated=%d", resume_fast_unlock);
+}
+
+void shell_suspend_after_draw(void) {
+    if (!suspend_pending) return;
+    suspend_pending = 0;
+    int fd = open("/sys/power/state", O_WRONLY | O_CLOEXEC);
+    if (fd < 0 || write(fd, "mem\n", 4) != 4) {
+        if (fd >= 0) close(fd);
+        resume_fast_unlock = 0;
+        snprintf(auth_message, sizeof auth_message, "La veille matérielle est indisponible.");
+        dirty = 1; MARK("POWER suspend unavailable"); return;
+    }
+    close(fd); lock_shown_t = now(); dirty = 1; MARK("POWER resumed from suspend");
+}
 
 static void lock_submit(void) {
     size_t n = strlen(auth_password);
@@ -174,7 +210,7 @@ static void toggle_start(void) {
 
 int shell_animating(void) {
     if (phase == PH_BOOT || unlock_t >= 0) return 1;
-    if (phase == PH_LOCK) return 1;   // fade-in + the bobbing unlock hint
+    if (phase == PH_LOCK) return now() - lock_shown_t < 0.35; // render the fade, then sleep until input
     float ts = start_open, tw = widgets_open, tk = clock_flyout_open;
     float td = (dock_autohide && !dock_revealed && !start_open) ? 0.0f : 1.0f;
     return fabsf(start_p - ts) > 0.001f || fabsf(widgets_p - tw) > 0.001f || fabsf(clock_flyout_p - tk) > 0.001f || fabsf(dock_p - td) > 0.001f;
@@ -210,7 +246,7 @@ void shell_tick(void) {
     if (phase == PH_LOCK && unlock_t >= 0 && t - unlock_t > 0.42) { phase = PH_DESK; unlock_t = -1; lock_drag = 0; MARK("READY desktop"); dirty = 1; }
     static double auth_retry;
     if (phase == PH_LOCK && auth_status < 0 && t - auth_retry > 1.0) { auth_retry = t; auth_status = flx_auth_status(); dirty = 1; }
-    if (wall_loaded != TH.wall) { load_wallpaper(); dirty = 1; }
+    if (wall_loaded != TH.wall + TH.dark * NWALL) { load_wallpaper(); dirty = 1; }
     static int last_min = -1;
     time_t tt = time(0);
     struct tm tm; localtime_r(&tt, &tm);
@@ -219,11 +255,8 @@ void shell_tick(void) {
 }
 
 float taskbar_icon_x(const char *exe) {
-    for (int i = 0; i < nhits; i++) if (hits[i].id >= H_TB_APP && hits[i].id < H_TB_APP + 20) {
-        // slots are registered in order; find by exe through the same ordering as draw_taskbar
-    }
-    int slot = -1;
-    for (int i = 0; i < NPIN; i++) if (!strcmp(PINNED[i], exe)) slot = i;
+    Slot ordered[16]; int n = slots(ordered), slot = -1;
+    for (int i = 0; i < n; i++) if (!strcmp(ordered[i].exe, exe)) { slot = i; break; }
     for (int i = 0; i < nhits; i++) if (hits[i].id == H_TB_APP + (slot < 0 ? NPIN : slot)) return hits[i].x + hits[i].w / 2;
     return SCR_W / 2;
 }
@@ -369,10 +402,9 @@ static void draw_topbar(Canvas *c) {
 }
 
 // ---- taskbar -----------------------------------------------------------------------------------------
-typedef struct { const char *exe; int app; } Slot;
 static int slots(Slot *s) {
     int n = 0;
-    for (int i = 0; i < NPIN; i++) s[n++] = (Slot){ PINNED[i], app_by_exe(PINNED[i]) };
+    for (int i = 0; i < NPIN; i++) if (dock_app_mask & (1 << i)) s[n++] = (Slot){ PINNED[i], app_by_exe(PINNED[i]) };
     for (int i = 0; i < MAXWIN && n < 16; i++) {
         Win *w = &wins[i];
         if (!w->used || w->closing || !w->exe[0]) continue;
@@ -557,12 +589,13 @@ static void draw_start(Canvas *c) {
     if (hover_id == H_POWER || power_menu) g_rrect(c, x + SM_W - 72, by + 12, 44, 44, 8, 8, TH.hover);
     icon_glyph(c, G_POWER, x + SM_W - 50, by + 34, 20, fg);
     if (power_menu) {
-        float mx = x + SM_W - 220, my = by - 140, mw = 200, mh = 132;
+        float mx = x + SM_W - 220, my = by - 180, mw = 200, mh = 172;
         glass_panel(c, mx, my, mw, mh, 8, 1);
-        const char *L[3] = { "Verrouiller", "Red\u00e9marrer", "Arr\u00eater" };
-        int G2[3] = { G_LOCK, G_RESTART, G_POWER };
-        for (int i = 0; i < 3; i++) {
-            int id = H_PWR_LOCK + i;
+        const char *L[4] = { "Mettre en veille", "Verrouiller", "Red\u00e9marrer", "Arr\u00eater" };
+        int G2[4] = { G_MOON, G_LOCK, G_RESTART, G_POWER };
+        int ids[4] = { H_PWR_SLEEP, H_PWR_LOCK, H_PWR_RESTART, H_PWR_SHUT };
+        for (int i = 0; i < 4; i++) {
+            int id = ids[i];
             float iy = my + 6 + i * 40;
             hit_add(id, mx + 6, iy, mw - 12, 38);
             if (hover_id == id) g_rrect(c, mx + 6, iy, mw - 12, 38, 6, 6, TH.hover);
@@ -765,6 +798,7 @@ int shell_mouse(IEv *e) {
         if (e->type == IE_DOWN && e->btn == 1 && h >= H_LOCK_SHUT && h <= H_LOCK_USER) {
             lock_power_open = 0;
             if (h == H_LOCK_SHUT || h == H_LOCK_RESTART) { settings_save(); sync(); exit(h == H_LOCK_RESTART ? 42 : 43); }
+            if (h == H_LOCK_SLEEP) request_suspend();
             dirty = 1; return 1;
         }
         if (e->type == IE_DOWN && e->btn == 1 && !lock_power_open && e->y >= SCR_H * .79f && e->y <= SCR_H * .79f + 76) { lock_down = 1; lock_x0 = e->x; lock_drag = 0; }
@@ -774,6 +808,7 @@ int shell_mouse(IEv *e) {
             if (lock_drag >= (fminf(390, SCR_W - 48) - 76) * .78f) {
                 auth_status = flx_auth_status(); auth_dialog = 1; auth_confirm = 0;
                 auth_password[0] = auth_first[0] = auth_message[0] = 0;
+                if (resume_fast_unlock && auth_status >= 0) { unlock(); dirty = 1; return 1; }
                 if (auth_status < 0) snprintf(auth_message, sizeof auth_message, "Service d’authentification indisponible.");
             } else lock_drag = 0;
             dirty = 1;
@@ -830,6 +865,7 @@ int shell_mouse(IEv *e) {
         case H_CLOCK_PANEL: return 1;
         case H_POWER: power_menu = !power_menu; return 1;
         case H_PWR_LOCK: lock_now(); return 1;
+        case H_PWR_SLEEP: request_suspend(); return 1;
         case H_PWR_RESTART: case H_PWR_SHUT:
             MARK("POWER %s", h == H_PWR_RESTART ? "restart" : "shutdown");
             settings_save(); sync();

@@ -131,6 +131,7 @@ int main(void) {
         work_sum += work;
         if (work > worst) worst = work;
         scr = drm_flip();
+        shell_suspend_after_draw();
         frames++;
         if (t - stat_t >= 10) {
             LOG("perf: %d frames (%d composed) in %.0f s, avg work %.1f ms, worst %.1f ms", frames, composes, t - stat_t, work_sum * 1000 / maxi(frames, 1), worst * 1000);

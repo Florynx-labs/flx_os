@@ -6,7 +6,7 @@
 // ---- theme (FLX OS dark palette: near-black surfaces, gold accent, teal highlights) -------
 const uint32_t ACCENTS[NACCENT] = { 0xFFF5AD32, 0xFF35D6C0, 0xFF1F6FEB, 0xFF7A4FD6, 0xFFD13469, 0xFF2E8B57 };
 const char *ACCENT_NAMES[NACCENT] = { "Gold", "Teal", "Glacier", "Violet", "Rose", "Fern" };
-const char *WALL_NAMES[NWALL] = { "Sunset City", "Aurora", "Dune" };
+const char *WALL_NAMES[NWALL] = { "Aurora", "Eclipse", "Flow", "Glass", "Horizon", "Obsidian", "Alpine", "Coast", "Sahara", "Aurora", "Eclipse", "Flow", "Glass", "Horizon", "Obsidian" };
 Theme TH;
 
 void theme_set(int dark, int accent, int wall) {

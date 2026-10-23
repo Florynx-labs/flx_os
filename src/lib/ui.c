@@ -60,7 +60,7 @@ bool ui_toggle(float x, float y, int *on) {
     return false;
 }
 
-int ui_field(int id, char *buf, int cap, float x, float y, float w, float h, const char *ph) {
+static int field_impl(int id, char *buf, int cap, float x, float y, float w, float h, const char *ph, int hidden) {
     bool foc = U.focus == id, hov = ui_hover(x, y, w, h);
     int ret = 0;
     if (ui_downin(x, y, w, h)) { U.focus = id; foc = true; }
@@ -92,14 +92,28 @@ int ui_field(int id, char *buf, int cap, float x, float y, float w, float h, con
     int sc[4];
     g_getclip(UC, sc);
     g_clip(UC, x + 8, y, x + w - 8, y + h);
-    float tw = text_w(F_REG, 15, 0, buf), tx = x + 11;
+    char masked[512] = "";
+    const char *shown = buf;
+    if (hidden) {
+        const char *p = buf; int count = 0;
+        while (*p && count < 100) { utf8_next(&p); strncat(masked, "•", sizeof masked - strlen(masked) - 1); count++; }
+        shown = masked;
+    }
+    float tw = text_w(F_REG, 15, 0, shown), tx = x + 11;
     if (tw > w - 26) tx = x + w - 15 - tw;
     float base = y + h / 2 + 5.5f;
     if (!buf[0] && ph) text(UC, F_REG, 15, 0, x + 11, base, TH.dim, ph);
-    else text(UC, F_REG, 15, 0, tx, base, TH.text, buf);
+    else text(UC, F_REG, 15, 0, tx, base, TH.text, shown);
     if (foc) g_rect(UC, tx + tw + 1, y + h / 2 - 9, 1.5f, 18, TH.text);
     g_setclip(UC, sc);
     return ret;
+}
+
+int ui_field(int id, char *buf, int cap, float x, float y, float w, float h, const char *ph) {
+    return field_impl(id, buf, cap, x, y, w, h, ph, 0);
+}
+int ui_password_field(int id, char *buf, int cap, float x, float y, float w, float h, const char *ph) {
+    return field_impl(id, buf, cap, x, y, w, h, ph, 1);
 }
 
 void ui_scroll(Scroll *s, float x, float y, float w, float h, float content_h) {

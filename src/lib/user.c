@@ -6,7 +6,7 @@
 
 UserManager g_users;
 
-static const char *CONFIG_PATH = "/home/.config/users.json";
+static const char *CONFIG_PATH = "/home/user/.config/users.json";
 
 void user_init(void) {
     memset(&g_users, 0, sizeof(g_users));

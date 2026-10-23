@@ -72,7 +72,26 @@ WALLPAPER_FALLBACKS = {
     "lock": "FLX_Worlds_Coast_1920x1080.png",
 }
 
+# Full FLX wallpaper pack. Selection IDs are kept in sync with WALL_NAMES in
+# src/lib/icons.c; the same six designs have separate light and dark renders.
+PACK_WALLPAPERS = {
+    **{f"dark_{name.lower()}": f"FLX_{name}_Dark_1920x1080.png" for name in ("Aurora", "Eclipse", "Flow", "Glass", "Horizon")},
+    "dark_obsidian": "FLX_Obsidian_Dark_source.png",
+    **{f"light_{name.lower()}": f"FLX_{name}_Light_1920x1080.png" for name in ("Aurora", "Eclipse", "Flow", "Glass", "Horizon")},
+    "light_obsidian": "FLX_Obsidian_Light_1920x1080.png",
+    "world_alpine": "FLX_Worlds_Alpine_1920x1080.png",
+    "world_coast": "FLX_Worlds_Coast_1920x1080.png",
+    "world_sahara": "FLX_Worlds_Sahara_1920x1080.png",
+}
+
 if HAS_PIL:
+    pack = ASSETS / "FLX_OS_Wallpaper_Pack"
+    for slug, filename in PACK_WALLPAPERS.items():
+        src = next(pack.rglob(filename), None)
+        if src:
+            save_raw(Image.open(src), OUT_WALL / f"{slug}.raw")
+        else:
+            print(f"[assets] MISSING wallpaper source: {filename}", flush=True)
     for slug, src_name in WALLPAPERS.items():
         src = ASSETS / src_name
         if not src.exists():

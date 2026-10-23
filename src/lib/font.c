@@ -5,6 +5,11 @@
 
 static stbtt_fontinfo fi[NFONT];
 static unsigned char *fdata[NFONT];
+static int active_family = -1;
+static const char *FONT_NAMES[4] = { "Selawik", "Liberation Sans", "Liberation Serif", "Liberation Mono" };
+const char *font_family_name(int family) { return FONT_NAMES[family >= 0 && family < 4 ? family : 0]; }
+
+int font_get_family(void) { return active_family < 0 ? 0 : active_family; }
 
 typedef struct {
     int f, cp, sz;           // sz = pixel size * 4
@@ -16,18 +21,30 @@ typedef struct {
 static Glyph cache[GC];
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;   // web layout measures text off-thread
 
-void font_init(void) {
-    static int done;
-    if (done) return;
-    done = 1;
-    const char *names[NFONT] = { "/share/fonts/selawkl.ttf", "/share/fonts/selawksl.ttf", "/share/fonts/selawk.ttf",
-                                 "/share/fonts/selawksb.ttf", "/share/fonts/selawkb.ttf" };
+void font_set_family(int family) {
+    if (family < 0 || family >= 4 || active_family == family) return;
+    static const char *files[4][NFONT] = {
+        { "selawkl.ttf", "selawksl.ttf", "selawk.ttf", "selawksb.ttf", "selawkb.ttf" },
+        { "LiberationSans-Regular.ttf", "LiberationSans-Regular.ttf", "LiberationSans-Regular.ttf", "LiberationSans-Bold.ttf", "LiberationSans-Bold.ttf" },
+        { "LiberationSerif-Regular.ttf", "LiberationSerif-Regular.ttf", "LiberationSerif-Regular.ttf", "LiberationSerif-Bold.ttf", "LiberationSerif-Bold.ttf" },
+        { "LiberationMono-Regular.ttf", "LiberationMono-Regular.ttf", "LiberationMono-Regular.ttf", "LiberationMono-Bold.ttf", "LiberationMono-Bold.ttf" },
+    };
+    pthread_mutex_lock(&mu);
     for (int i = 0; i < NFONT; i++) {
-        size_t n;
-        fdata[i] = (unsigned char *)read_file(names[i], &n);
-        if (!fdata[i]) { LOG("font: missing %s", names[i]); exit(1); }
+        free(fdata[i]); fdata[i] = 0; memset(&fi[i], 0, sizeof fi[i]);
+        char path[96]; snprintf(path, sizeof path, "/share/fonts/%s", files[family][i]);
+        size_t n = 0; fdata[i] = (unsigned char *)read_file(path, &n);
+        if (!fdata[i]) { LOG("font: missing %s", path); exit(1); }
         stbtt_InitFont(&fi[i], fdata[i], 0);
     }
+    for (int i = 0; i < GC; i++) { free(cache[i].bm); memset(&cache[i], 0, sizeof cache[i]); }
+    active_family = family;
+    pthread_mutex_unlock(&mu);
+}
+
+void font_init(void) {
+    if (active_family >= 0) return;
+    font_set_family(0);
 }
 
 int utf8_next(const char **s) {

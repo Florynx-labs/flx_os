@@ -76,6 +76,9 @@ void app_launch(const char *exe, const char *arg) {
 void app_clip_set(const char *s) { msg_send(sock, M_CLIP_SET, 0, 0, 0, 0, 0, s, -1); }
 void app_set_theme(int dark, int accent, int wall) { msg_send(sock, M_SET_THEME, dark, accent, wall, 0, 0, 0, -1); }
 void app_set_dock(int autohide) { msg_send(sock, M_SET_DOCK, autohide, 0, 0, 0, 0, 0, -1); }
+void app_set_font(int family) { msg_send(sock, M_SET_FONT, family, 0, 0, 0, 0, 0, -1); }
+void app_set_scale(int percent) { msg_send(sock, M_SET_SCALE, percent, 0, 0, 0, 0, 0, -1); }
+void app_set_dock_apps(int mask) { msg_send(sock, M_SET_DOCK_APPS, mask, 0, 0, 0, 0, 0, -1); }
 void app_power(int restart) { msg_send(sock, M_POWER, restart, 0, 0, 0, 0, 0, -1); }
 void app_recent(const char *path) { msg_send(sock, M_RECENT, 0, 0, 0, 0, 0, path, -1); }
 void app_quit(void) { exit(0); }
@@ -84,6 +87,18 @@ static int wait_msg(Msg *m, int ms) {
     struct pollfd p = { sock, POLLIN, 0 };
     if (poll(&p, 1, ms) <= 0) return -1;
     return msg_recv(sock, m, 0);
+}
+int app_auth_request(const char *request, char *response, size_t response_size) {
+    if (!request || !response || response_size < 2 || msg_send(sock, M_AUTH_REQ, 0, 0, 0, 0, 0, request, -1) < 0) return -1;
+    double deadline = now() + 10.0;
+    while (now() < deadline) {
+        Msg m; int r = wait_msg(&m, 250);
+        if (r == 0) exit(0);
+        if (r < 0) continue;
+        if (m.type == M_AUTH_RES) { snprintf(response, response_size, "%s", m.s); return 0; }
+        if (npend < 32) pend[npend++] = m;
+    }
+    return -1;
 }
 char *app_clip_get(void) {
     msg_send(sock, M_CLIP_GET, 0, 0, 0, 0, 0, 0, -1);
@@ -130,6 +145,7 @@ static void handle(Msg *m) {
         break;
     case M_RELEASE: if (m->a == 0 || m->a == 1) busy[m->a] = 0; break;
     case M_THEME: theme_set(m->a, m->b, m->c); need = 1; break;
+    case M_FONT: font_set_family(m->a); need = 1; break;
     case M_FOCUS: app_focused = m->a; need = 1; break;
     case M_CLOSE_REQ:
         if (!A->close || A->close()) { LOG("%s: closing", A->exe); exit(0); }

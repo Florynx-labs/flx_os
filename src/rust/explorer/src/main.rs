@@ -738,6 +738,9 @@ extern "C" fn draw(c: *mut Canvas) {
         icon_glyph(c, 49, 27.0, sep + 34.0, 16.0, CYAN);
     }
     label(c, 47.0, sep + 37.0, 2, 11.0, TXT, "Disque local (/)");
+    if unsafe { ui_click(8.0, sep + 20.0, nav_w - 16.0, 48.0) } {
+        s.navigate(PathBuf::from("/"), true);
+    }
     let vol = if has_stats {
         format!("{} / {}", human_size(stats.used), human_size(stats.total))
     } else {
@@ -757,6 +760,43 @@ extern "C" fn draw(c: *mut Canvas) {
                 2.0,
                 CYAN,
             );
+        }
+    }
+    // Linux exposes mounted USB, SD and external disks as mount points. Show
+    // actual mounted device paths and make them navigable instead of drawing a
+    // decorative, inert device row.
+    let mut devices: Vec<PathBuf> = Vec::new();
+    if let Ok(mounts) = fs::read_to_string("/proc/mounts") {
+        for line in mounts.lines() {
+            let mut fields = line.split_whitespace();
+            let source = fields.next().unwrap_or("");
+            let mount = fields.next().unwrap_or("");
+            if source.starts_with("/dev/") && mount != "/" && mount != "/dev" {
+                let decoded = mount.replace("\\040", " ");
+                let p = PathBuf::from(decoded);
+                if p.is_dir() && !devices.contains(&p) {
+                    devices.push(p);
+                }
+            }
+        }
+    }
+    for (i, device) in devices.iter().take(3).enumerate() {
+        let dy = sep + 74.0 + i as f32 * 22.0;
+        let name = device
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Périphérique");
+        label(
+            c,
+            47.0,
+            dy + 12.0,
+            2,
+            10.0,
+            SUB,
+            &format!("{} ({})", name, device.display()),
+        );
+        if unsafe { ui_click(42.0, dy, nav_w - 48.0, 20.0) } {
+            s.navigate(device.clone(), true);
         }
     }
     label(c, 14.0, sep + 88.0, 3, 10.0, MUTED, "RÉSEAU");
