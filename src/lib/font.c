@@ -6,7 +6,7 @@
 static stbtt_fontinfo fi[NFONT];
 static unsigned char *fdata[NFONT];
 static int active_family = -1;
-static const char *FONT_NAMES[4] = { "Selawik", "Liberation Sans", "Liberation Serif", "Liberation Mono" };
+static const char *FONT_NAMES[4] = { "Liberation Sans", "Selawik", "Liberation Serif", "Liberation Mono" };
 const char *font_family_name(int family) { return FONT_NAMES[family >= 0 && family < 4 ? family : 0]; }
 
 int font_get_family(void) { return active_family < 0 ? 0 : active_family; }
@@ -24,8 +24,8 @@ static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;   // web layout measures 
 void font_set_family(int family) {
     if (family < 0 || family >= 4 || active_family == family) return;
     static const char *files[4][NFONT] = {
-        { "selawkl.ttf", "selawksl.ttf", "selawk.ttf", "selawksb.ttf", "selawkb.ttf" },
         { "LiberationSans-Regular.ttf", "LiberationSans-Regular.ttf", "LiberationSans-Regular.ttf", "LiberationSans-Bold.ttf", "LiberationSans-Bold.ttf" },
+        { "selawkl.ttf", "selawksl.ttf", "selawk.ttf", "selawksb.ttf", "selawkb.ttf" },
         { "LiberationSerif-Regular.ttf", "LiberationSerif-Regular.ttf", "LiberationSerif-Regular.ttf", "LiberationSerif-Bold.ttf", "LiberationSerif-Bold.ttf" },
         { "LiberationMono-Regular.ttf", "LiberationMono-Regular.ttf", "LiberationMono-Regular.ttf", "LiberationMono-Bold.ttf", "LiberationMono-Bold.ttf" },
     };

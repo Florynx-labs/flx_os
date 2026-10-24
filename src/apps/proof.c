@@ -71,7 +71,7 @@ static void draw(Canvas *c) {
     float W = U.w, H = U.h;
     struct utsname u; uname(&u);
     icon_app(c, APP_PROOF, 24, 18, 52);
-    text(c, F_SEMI, 26, 0, 92, 44, TH.text, "Proof: what runs on this PC");
+    text(c, F_SEMI, 26, 0, 92, 44, TH.text, "Informations système");
     char kv[200]; snprintf(kv, sizeof kv, "Kernel: %s %s (%s)", u.sysname, u.release, u.machine);
     text(c, F_REG, 14, 0, 92, 68, TH.sub, kv);
     g_rrect(c, 24, 86, W - 48, 40, 8, 8, TH.accent_soft);
@@ -133,6 +133,6 @@ static void draw(Canvas *c) {
 static void tick(void) { refresh(); app_redraw(); }
 
 int main(int argc, char **argv) {
-    static AppDef a = { .exe = "proof", .title = "Proof", .w = 1280, .h = 760, .mica = 1, .init = init, .draw = draw, .tick = tick, .tick_ms = 2000 };
+    static AppDef a = { .exe = "proof", .title = "Informations système", .w = 1280, .h = 760, .mica = 1, .init = init, .draw = draw, .tick = tick, .tick_ms = 2000 };
     return app_main(&a, argc, argv);
 }

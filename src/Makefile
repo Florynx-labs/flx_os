@@ -9,10 +9,11 @@ LIBC = $(patsubst %.c,$(O)/%.o,$(wildcard lib/*.c))
 NETC = $(patsubst %.c,$(O)/%.o,$(wildcard net/*.c)) $(O)/ta.o
 WEBC = $(patsubst %.c,$(O)/%.o,$(wildcard web/*.c))
 COMPC = $(patsubst %.c,$(O)/%.o,$(wildcard comp/*.c))
-APPS = $(filter-out browser store,$(patsubst apps/%.c,%,$(wildcard apps/*.c)))
+APPS = $(filter-out store,$(patsubst apps/%.c,%,$(wildcard apps/*.c)))
 LIBS = $(O)/libweb.a $(O)/libnet.a $(O)/libw12.a $(BEAR)/build/libbearssl.a -lm
+QJS = $(O)/quickjs/quickjs.o $(O)/quickjs/dtoa.o $(O)/quickjs/libregexp.o $(O)/quickjs/libunicode.o $(O)/quickjs/cutils.o
 
-all: $(O)/bin/init $(O)/bin/flx-netd $(O)/bin/flx-compositor $(O)/bin/flxsh $(addprefix $(O)/bin/,$(APPS)) $(O)/tools/gen_wallpaper rust-apps
+all: $(O)/bin/init $(O)/bin/flx-netd $(O)/bin/flx-deviced $(O)/bin/flx-compositor $(O)/bin/flxsh $(addprefix $(O)/bin/,$(APPS)) $(O)/tools/gen_wallpaper rust-apps
 
 # Rust executables call the existing libflxui C ABI. Keep C implementations as
 # buildable rollback targets; the staged /bin names are supplied by Rust.
@@ -20,10 +21,14 @@ rust-apps: $(O)/libw12.a
 	cd rust && RUSTFLAGS="-C target-feature=+crt-static -L native=$(O) -L native=$(BEAR)/build -l static=w12 -l static=bearssl -l m -l pthread" cargo build --offline --release --workspace --target-dir $(O)/rust
 	cp $(O)/rust/release/explorer $(O)/bin/explorer
 	cp $(O)/rust/release/taskmgr $(O)/bin/taskmgr
+	cp $(O)/rust/release/proof $(O)/bin/proof
 	cp $(O)/rust/release/flx-authd $(O)/bin/flx-authd
 	cd ../getra && RUSTFLAGS="-C target-feature=+crt-static" cargo build --offline --release --target-dir $(O)/rust-getra
 	cp $(O)/rust-getra/release/getra $(O)/bin/getra
 
+$(O)/quickjs/%.o: ../third_party/quickjs/%.c
+	@mkdir -p $(dir $@)
+	$(CC) -O2 -g0 -std=gnu11 -D_GNU_SOURCE -DCONFIG_VERSION=\"2026-06-04\" -Wno-unused-parameter -Wno-sign-compare -I../third_party/quickjs -c $< -o $@
 $(O)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -40,10 +45,14 @@ $(O)/bin/init: $(O)/init/init.o
 	@mkdir -p $(dir $@); $(CC) $(LDFLAGS) -o $@ $^
 $(O)/bin/flx-netd: $(O)/netd/netd.o $(O)/libw12.a
 	@mkdir -p $(dir $@); $(CC) $(LDFLAGS) -o $@ $^ -lm
+$(O)/bin/flx-deviced: $(O)/deviced/deviced.o $(O)/libw12.a
+	@mkdir -p $(dir $@); $(CC) $(LDFLAGS) -o $@ $^ -lm
 $(O)/bin/flx-compositor: $(COMPC) $(LIBS:-lm=) 
 	@mkdir -p $(dir $@); $(CC) $(LDFLAGS) -o $@ $(COMPC) $(LIBS)
 $(O)/bin/flxsh: $(O)/sh/w12sh.o $(LIBS:-lm=)
 	@mkdir -p $(dir $@); $(CC) $(LDFLAGS) -o $@ $< $(LIBS)
+$(O)/bin/browser: $(O)/apps/browser.o $(LIBS:-lm=) $(QJS)
+	@mkdir -p $(dir $@); $(CC) $(LDFLAGS) -o $@ $< $(LIBS) $(QJS)
 $(O)/bin/%: $(O)/apps/%.o $(LIBS:-lm=)
 	@mkdir -p $(dir $@); $(CC) $(LDFLAGS) -o $@ $< $(LIBS)
 $(O)/tools/gen_wallpaper: ../tools/gen_wallpaper.c

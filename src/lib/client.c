@@ -95,7 +95,7 @@ int app_auth_request(const char *request, char *response, size_t response_size) 
         Msg m; int r = wait_msg(&m, 250);
         if (r == 0) exit(0);
         if (r < 0) continue;
-        if (m.type == M_AUTH_RES) { snprintf(response, response_size, "%s", m.s); return 0; }
+        if (m.type == M_AUTH_RES) { snprintf(response, response_size, "%s", m.s); memset(m.s, 0, sizeof m.s); return 0; }
         if (npend < 32) pend[npend++] = m;
     }
     return -1;

@@ -5,6 +5,7 @@ Converts source images from assets/ into rootfs-ready formats:
   - Wallpapers  → build/wallpapers/*.raw   (FLXW magic + ARGB32 pixels, 1920×1080)
   - Lock screen → build/wallpapers/lock.raw
   - App icons   → build/icons/*.png        (128×128 RGBA PNG)
+  - Lucide SVGs → build/icons/lucide/<name>-<size>.png (white RGBA masks)
 
 Called from docker/build-inside.sh (inside the Alpine container).
 Run standalone on the host for quick verification.
@@ -16,10 +17,25 @@ SCR_W, SCR_H = 1920, 1080
 ICON_SIZE = 128
 SRC = Path(__file__).parent.parent  # project root
 ASSETS = SRC / "assets"
-OUT_WALL = SRC / "build" / "wallpapers"
-OUT_ICONS = SRC / "build" / "icons"
+OUT_ROOT = Path(os.environ.get("FLX_ASSET_OUT", SRC / "build"))
+OUT_WALL = OUT_ROOT / "wallpapers"
+OUT_ICONS = OUT_ROOT / "icons"
+LUCIDE_SRC = SRC / "third_party" / "icons" / "lucide" / "svg"
+LUCIDE_OUT = OUT_ICONS / "lucide"
+ICON_SIZES = (16, 20, 24, 32, 48, 64)
+LUCIDE_NAMES = (
+    "search wifi wifi-off volume-2 battery power x minimize maximize copy "
+    "chevron-right chevron-left chevron-down chevron-up arrow-left arrow-right "
+    "arrow-up rotate-cw plus trash-2 pencil folder file settings user-round "
+    "panels-top-left house list grid-2x2 sun moon cloud cloud-rain star send flag "
+    "clock lock-keyhole info palette network layout-grid monitor shield-check "
+    "check ellipsis clipboard save bluetooth cpu memory-stick hard-drive refresh-cw "
+    "calculator chart-no-axes-column-increasing bomb globe file-pen-line terminal "
+    "image music video archive file-code-2 file-text file-json braces box"
+).split()
 OUT_WALL.mkdir(parents=True, exist_ok=True)
 OUT_ICONS.mkdir(parents=True, exist_ok=True)
+LUCIDE_OUT.mkdir(parents=True, exist_ok=True)
 
 try:
     from PIL import Image
@@ -28,13 +44,22 @@ except ImportError:
     HAS_PIL = False
     print("[assets] Pillow not available — skipping PNG conversion; raw fallback only.", flush=True)
 
+try:
+    import cairosvg
+    HAS_CAIROSVG = True
+except ImportError:
+    HAS_CAIROSVG = False
+
 
 def argb32(r, g, b, a=255):
     return (a << 24) | (r << 16) | (g << 8) | b
 
 
-def save_raw(img, out_path):
+def save_raw(img, out_path, source_path=None):
     """Save a PIL image as FLXW raw file (magic + width + height + ARGB32 pixels)."""
+    if source_path and out_path.exists() and out_path.stat().st_mtime_ns >= source_path.stat().st_mtime_ns:
+        print(f"[assets] cached wallpaper → {out_path.name}", flush=True)
+        return
     img = img.convert("RGBA").resize((SCR_W, SCR_H), Image.LANCZOS)
     data = bytearray()
     data += struct.pack("<III", 0x574C5846, SCR_W, SCR_H)  # "FLXW" little-endian
@@ -44,8 +69,11 @@ def save_raw(img, out_path):
     print(f"[assets] wallpaper  → {out_path.name} ({SCR_W}×{SCR_H})", flush=True)
 
 
-def save_icon(img, out_path, size=ICON_SIZE):
+def save_icon(img, out_path, size=ICON_SIZE, source_path=None):
     """Save a PIL image as PNG icon (default 128×128, or custom size)."""
+    if source_path and out_path.exists() and out_path.stat().st_mtime_ns >= source_path.stat().st_mtime_ns:
+        print(f"[assets] cached icon → {out_path.name}", flush=True)
+        return
     img = img.convert("RGBA").resize((size, size), Image.LANCZOS)
     img.save(str(out_path))
     print(f"[assets] icon       → {out_path.name} ({size}×{size})", flush=True)
@@ -89,7 +117,7 @@ if HAS_PIL:
     for slug, filename in PACK_WALLPAPERS.items():
         src = next(pack.rglob(filename), None)
         if src:
-            save_raw(Image.open(src), OUT_WALL / f"{slug}.raw")
+            save_raw(Image.open(src), OUT_WALL / f"{slug}.raw", src)
         else:
             print(f"[assets] MISSING wallpaper source: {filename}", flush=True)
     for slug, src_name in WALLPAPERS.items():
@@ -101,44 +129,17 @@ if HAS_PIL:
         if not src.exists():
             print(f"[assets] MISSING wallpaper source: {src_name} → skipping {slug}.raw", flush=True)
             continue
-        save_raw(Image.open(src), OUT_WALL / f"{slug}.raw")
+        save_raw(Image.open(src), OUT_WALL / f"{slug}.raw", src)
 else:
     print("[assets] No PIL — wallpapers will be generated procedurally by gen_wallpaper", flush=True)
 
 # ---------------------------------------------------------------------------
-# Icon mapping: filename stem → source icon in assets/icones/ or assets/
+# Brand assets retained as raster images; application and system UI glyphs use Lucide.
 # ---------------------------------------------------------------------------
 ICON_MAP = {
-    # Core apps (match APPS[].exe names in icons.c)
-    "explorer":    "file-explorer.png",
-    "settings":    "settings.png",
-    "terminal":    "terminal.png",
-    "notepad":     "note_app_icone.png",
-    "calc":        "calculator_icones.png",
-    "browser":     "flw-browser.png",
-    "taskmgr":     "task-manager.png",
-    "minesweeper": "applications-grid.png",
-    "proof":       "system-info.png",
-    "store":       "flx-store.png",
-    # Extra apps & system icons from assets/icones/
-    "media":       "media_palyer_icone.png",
-    "weather":     "meteo_icone.png",
-    "gallery":     "galerie_images_icone.png",
-    "clock":       "clock.png",
-    "calendar":    "calandar.png",
-    "trash":       "trash.png",
-    "power":       "power.png",
-    "wifi":        "wifi.png",
-    "battery":     "battery.png",
-    "notifications": "notifications.png",
-    "app_launcher":  "app-launcher.png",
     "flx_os_logo":   "flx-os-logo.png",
-    "browser_lg":    "brower_icone.png",
-    # Official FLX OS branding and user profile (from assets/ root)
-    "flx_logo_mark":        "flx_logo_pour_le_ctart_et_lock_screen.png",
-    "flx_logo":             "flx_logo.png",
-    "flx_logo_transparent": "flx_logo_transparent.png",
-    "user_avatar":          "flx_user_pfp.png",
+    "flx_logo_mark": "flx_logo_pour_le_ctart_et_lock_screen.png",
+    "user_avatar":   "flx_user_pfp.png",
 }
 
 if HAS_PIL:
@@ -152,16 +153,42 @@ if HAS_PIL:
             print(f"[assets] MISSING icon source: {src_name} → skipping {slug}.png", flush=True)
             continue
         sz = 256 if slug in ("flx_logo_mark", "user_avatar") else ICON_SIZE
-        save_icon(Image.open(src), OUT_ICONS / f"{slug}.png", size=sz)
+        save_icon(Image.open(src), OUT_ICONS / f"{slug}.png", size=sz, source_path=src)
 
     # Clock flyout card landscape image (320×140)
     card_src = ASSETS / "widget_landscape.png"
     if not card_src.exists():
         card_src = ASSETS / "lock_screen.png"
     if card_src.exists():
-        im_card = Image.open(card_src).convert("RGBA").resize((320, 140), Image.LANCZOS)
-        im_card.save(str(OUT_ICONS / "card_landscape.png"))
-        print("[assets] card landscape → card_landscape.png (320×140)", flush=True)
+        card_out = OUT_ICONS / "card_landscape.png"
+        if not card_out.exists() or card_out.stat().st_mtime_ns < card_src.stat().st_mtime_ns:
+            im_card = Image.open(card_src).convert("RGBA").resize((320, 140), Image.LANCZOS)
+            im_card.save(str(card_out))
+            print("[assets] card landscape → card_landscape.png (320×140)", flush=True)
+
+    # Lucide assets are monochrome masks: all visible pixels are white and their
+    # alpha comes from SVG coverage. libflxui can therefore apply theme colors.
+    if LUCIDE_SRC.is_dir():
+        if not HAS_CAIROSVG:
+            raise SystemExit("[assets] Lucide SVGs found but CairoSVG is unavailable")
+        missing = [name for name in LUCIDE_NAMES if not (LUCIDE_SRC / f"{name}.svg").is_file()]
+        if missing:
+            raise SystemExit(f"[assets] Missing vendored Lucide SVGs: {', '.join(missing)}")
+        for name in LUCIDE_NAMES:
+            svg = LUCIDE_SRC / f"{name}.svg"
+            for size in ICON_SIZES:
+                png = LUCIDE_OUT / f"{svg.stem}-{size}.png"
+                if png.exists() and png.stat().st_mtime_ns >= svg.stat().st_mtime_ns:
+                    continue
+                rendered = cairosvg.svg2png(url=str(svg), output_width=size, output_height=size)
+                from io import BytesIO
+                im = Image.open(BytesIO(rendered)).convert("RGBA")
+                # Normalize source color while retaining rasterized alpha.
+                alpha = im.getchannel("A")
+                mask = Image.new("RGBA", (size, size), (255, 255, 255, 0))
+                mask.putalpha(alpha)
+                mask.save(str(png), optimize=True)
+        print(f"[assets] Lucide SVGs → {len(LUCIDE_NAMES)} names × {len(ICON_SIZES)} sizes", flush=True)
 else:
     print("[assets] No PIL — icons will use procedurally drawn fallbacks in icons.c", flush=True)
 

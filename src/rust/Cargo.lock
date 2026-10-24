@@ -18,6 +18,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "flx-proof"
+version = "0.1.0"
+dependencies = [
+ "flx-core",
+]
+
+[[package]]
 name = "flx-taskmgr"
 version = "0.1.0"
 dependencies = [

@@ -25,8 +25,13 @@ int flx_auth_request(const char *request, char *response, size_t response_size) 
 }
 
 int flx_auth_status(void) {
-    char response[32];
-    if (flx_auth_request("STATUS", response, sizeof response)) return -1;
+    return flx_auth_status_user("flx");
+}
+
+int flx_auth_status_user(const char *name) {
+    char request[64], response[32];
+    if (!name || snprintf(request, sizeof request, "STATUS %s", name) >= (int)sizeof request) return -1;
+    if (flx_auth_request(request, response, sizeof response)) return -1;
     if (!strcmp(response, "EMPTY")) return 0;
     if (!strcmp(response, "ENROLLED")) return 1;
     return -1;

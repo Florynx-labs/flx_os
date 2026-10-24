@@ -8,11 +8,13 @@
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <grp.h>
 #include <pwd.h>
 #include <unistd.h>
+#include <stdio.h>
 
 Win wins[MAXWIN];
 int zord[MAXWIN], nz;
@@ -20,6 +22,10 @@ Win *focus;
 char *clipboard;
 int ui_scale_percent = 100;
 static int next_id = 1, cascade;
+static uid_t session_uid = 1000;
+static gid_t session_gid = 1000;
+static char session_name[32] = "flx", session_role[16] = "admin";
+static pid_t session_children[128];
 #define TOP 36             // top bar height
 #define WORK_Y0 TOP
 #define WORK_Y1 1000       // above the floating taskbar
@@ -40,6 +46,106 @@ static float rad(Win *w) { return w->state == 1 ? 0 : 8; }
 static int idx(Win *w) { return (int)(w - wins); }
 
 void wm_init(void) { (void)0; }
+uid_t wm_session_uid(void) { return session_uid; }
+const char *wm_session_name(void) { return session_name; }
+const char *wm_session_role(void) { return session_role; }
+
+int wm_session_set(uid_t uid, gid_t gid, const char *name, const char *role) {
+    if (uid < 1000 || gid < 1000 || uid > 60000 || !name || !*name || strlen(name) >= sizeof session_name ||
+        !role || (strcmp(role, "admin") && strcmp(role, "standard"))) return -1;
+    char target[96], temp[96];
+    snprintf(target, sizeof target, "/home/users/%s", name);
+    snprintf(temp, sizeof temp, "/home/.user-session-%ld", (long)getpid());
+    struct stat st;
+    if (lstat(target, &st) || !S_ISDIR(st.st_mode) || st.st_uid != uid || st.st_gid != gid || (st.st_mode & 0077)) return -1;
+    // End all processes from the previous account before changing the root-owned
+    // compatibility link used by existing apps for HOME-relative legacy paths.
+    for (int i = 0; i < 128; i++) if (session_children[i] > 1) {
+        pid_t child = session_children[i];
+        if (waitpid(child, 0, WNOHANG) == 0) { kill(-child, SIGKILL); kill(child, SIGKILL); while (waitpid(child, 0, 0) < 0 && errno == EINTR) {} }
+        session_children[i] = 0;
+    }
+    for (int i = 0; i < MAXWIN; i++) if (wins[i].used) {
+        if (wins[i].fd >= 0) close(wins[i].fd);
+        if (wins[i].shm) munmap(wins[i].shm, (size_t)2 * BUF_W * BUF_H * 4);
+        memset(&wins[i], 0, sizeof wins[i]);
+    }
+    nz = 0; focus = 0; dw = hover_win = flyout_win = hover_max_win = 0;
+    drag = DR_NONE; flyout_open = assist_open = 0;
+    free(clipboard); clipboard = NULL;
+    unlink(temp);
+    gid_t old_gid = session_gid;
+    if (symlink(target, temp)) { unlink(temp); return -1; }
+    if (chown(W12_SOCK, 0, gid) || chmod(W12_SOCK, 0660)) { unlink(temp); chown(W12_SOCK, 0, old_gid); return -1; }
+    if (rename(temp, "/home/user")) { unlink(temp); chown(W12_SOCK, 0, old_gid); return -1; }
+    session_uid = uid; session_gid = gid;
+    snprintf(session_name, sizeof session_name, "%s", name);
+    snprintf(session_role, sizeof session_role, "%s", role);
+    shell_reload_session();
+    panels_session_changed();
+    return 0;
+}
+
+int wm_write_user_file(const char *path, const void *data, size_t len) {
+    if (!path || strncmp(path, "/home/user/", 11) || strstr(path, "/../") || len > 1024 * 1024) return -1;
+    pid_t p = fork();
+    if (p < 0) return -1;
+    if (p == 0) {
+        for (int fd = 3; fd < 4096; fd++) close(fd);
+        if (setgroups(0, NULL) || setgid(session_gid) || setuid(session_uid) || prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) _exit(126);
+        umask(077);
+        int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
+        if (fd < 0) _exit(126);
+        struct stat st;
+        if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_uid != session_uid) { close(fd); _exit(126); }
+        const unsigned char *bytes = data; size_t off = 0;
+        while (off < len) { ssize_t n = write(fd, bytes + off, len - off); if (n <= 0) { close(fd); _exit(126); } off += (size_t)n; }
+        int ok = fsync(fd) == 0; close(fd); _exit(ok ? 0 : 126);
+    }
+    int status = 0;
+    while (waitpid(p, &status, 0) < 0) if (errno != EINTR) return -1;
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
+}
+
+char *wm_read_user_file(const char *path, size_t max_len) {
+    if (!path || strncmp(path, "/home/user/", 11) || strstr(path, "/../") || !max_len || max_len > 1024 * 1024) return NULL;
+    int fds[2];
+    if (pipe2(fds, O_CLOEXEC)) return NULL;
+    pid_t p = fork();
+    if (p < 0) { close(fds[0]); close(fds[1]); return NULL; }
+    if (p == 0) {
+        close(fds[0]);
+        for (int fd = 3; fd < 4096; fd++) if (fd != fds[1]) close(fd);
+        if (setgroups(0, NULL) || setgid(session_gid) || setuid(session_uid) || prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) _exit(126);
+        int in = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+        if (in < 0) _exit(126);
+        struct stat st;
+        if (fstat(in, &st) || !S_ISREG(st.st_mode) || st.st_uid != session_uid) { close(in); _exit(126); }
+        unsigned char buf[4096]; size_t total = 0;
+        while (total < max_len) {
+            ssize_t n = read(in, buf, sizeof buf < max_len - total ? sizeof buf : max_len - total);
+            if (n < 0 && errno == EINTR) continue;
+            if (n <= 0) break;
+            size_t off = 0;
+            while (off < (size_t)n) { ssize_t w = write(fds[1], buf + off, (size_t)n - off); if (w < 0 && errno == EINTR) continue; if (w <= 0) { close(in); close(fds[1]); _exit(0); } off += (size_t)w; }
+            total += (size_t)n;
+        }
+        close(in); close(fds[1]); _exit(0);
+    }
+    close(fds[1]);
+    char *out = malloc(max_len + 1); size_t used = 0;
+    if (!out) { close(fds[0]); kill(p, SIGKILL); waitpid(p, 0, 0); return NULL; }
+    while (used < max_len) {
+        ssize_t n = read(fds[0], out + used, max_len - used);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) break;
+        used += (size_t)n;
+    }
+    close(fds[0]);
+    int status = 0; while (waitpid(p, &status, 0) < 0 && errno == EINTR) {}
+    if (!used || !WIFEXITED(status) || WEXITSTATUS(status) != 0) { free(out); return NULL; }
+    out[used] = 0; return out;
+}
 
 int wm_animating(void) {
     for (int i = 0; i < MAXWIN; i++) if (wins[i].used && wins[i].anim) return 1;
@@ -89,14 +195,17 @@ void wm_maximize(Win *w) {
     if (w->state == 1) { set_rect(w, w->rx, w->ry, w->rw, w->rh, 0); MARK("RESTORE %s", w->exe); return; }
     if (w->state == 0) { w->rx = w->x; w->ry = w->y; w->rw = w->w; w->rh = w->h; }
     float bottom = work_bottom();
-    set_rect(w, 0, WORK_Y0 + TB, SCR_W, bottom - WORK_Y0 - TB, 1);
+    // Maximized windows take the complete work area. The shell detects this
+    // state and suppresses its top panel, while the dock remains independently
+    // visible or auto-hidden at the bottom edge.
+    set_rect(w, 0, TB, SCR_W, bottom - TB, 1);
     MARK("MAXIMIZE %s", w->exe);
 }
 void wm_update_dock_autohide(void) {
     float bottom = work_bottom();
     for (int i = 0; i < MAXWIN; i++) {
         if (wins[i].used && wins[i].mapped && wins[i].state == 1) {
-            set_rect(&wins[i], 0, WORK_Y0 + TB, SCR_W, bottom - WORK_Y0 - TB, 1);
+            set_rect(&wins[i], 0, TB, SCR_W, bottom - TB, 1);
         }
     }
 }
@@ -179,6 +288,12 @@ void launch(const char *exe, const char *arg) {
     // arbitrary root exec helper. The launched process always enters the
     // isolated FLX desktop account before executing an allow-listed app.
     if (!exe || app_by_exe(exe) < 0) { LOG("wm: blocked non-app launch request"); return; }
+    int child_slot = -1;
+    for (int i = 0; i < 128; i++) {
+        if (session_children[i] > 1 && waitpid(session_children[i], 0, WNOHANG) == session_children[i]) session_children[i] = 0;
+        if (!session_children[i] && child_slot < 0) child_slot = i;
+    }
+    if (child_slot < 0) { LOG("wm: app process limit reached"); return; }
     // single-instance apps: focus the running one
     if (!strcmp(exe, "settings") || !strcmp(exe, "taskmgr") || !strcmp(exe, "calc") || !strcmp(exe, "minesweeper")) {
         for (int i = 0; i < MAXWIN; i++) if (wins[i].used && !wins[i].closing && !strcmp(wins[i].exe, exe)) { wm_restore(&wins[i]); return; }
@@ -188,6 +303,7 @@ void launch(const char *exe, const char *arg) {
     MARK("LAUNCH %s", exe);
     pid_t p = fork();
     if (p == 0) {
+        setpgid(0, 0);
         sigset_t s; sigemptyset(&s); sigprocmask(SIG_SETMASK, &s, 0);
         // Do not leak the compositor's DRM, input, listener, or console read
         // descriptors across exec. Applications get only fresh /dev/null stdio.
@@ -198,12 +314,14 @@ void launch(const char *exe, const char *arg) {
         if (nullfd != 0) { dup2(nullfd, 0); close(nullfd); }
         dup2(0, 1); dup2(0, 2);
         if (chdir("/home/user")) _exit(126);
-        if (setgroups(0, NULL) || setgid(1000) || setuid(1000) || prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) _exit(126);
-        setenv("HOME", "/home/user", 1); setenv("USER", "flx", 1);
+        if (setgroups(0, NULL) || setgid(session_gid) || setuid(session_uid) || prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) _exit(126);
+        umask(077);
+        setenv("HOME", "/home/user", 1); setenv("USER", session_name, 1);
         if (arg && *arg) execl(path, exe, arg, (char *)0);
         else execl(path, exe, (char *)0);
         _exit(127);
     }
+    if (p > 0) session_children[child_slot] = p;
 }
 
 void wm_broadcast_theme(void) {
@@ -219,8 +337,9 @@ void wm_accept(int lfd) {
         memset(&wins[i], 0, sizeof wins[i]);
         wins[i].used = 1; wins[i].fd = fd; wins[i].front = -1; wins[i].id = next_id++;
         wins[i].peer_uid = (uid_t)-1;
+        wins[i].peer_pid = -1;
         struct ucred cred; socklen_t clen = sizeof cred;
-        if (!getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &clen)) wins[i].peer_uid = cred.uid;
+        if (!getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &clen)) { wins[i].peer_uid = cred.uid; wins[i].peer_pid = cred.pid; }
         return;
     }
     close(fd);
@@ -253,6 +372,7 @@ void wm_client(Win *w) {
     while (w->fd >= 0 && (r = msg_recv(w->fd, &m, &mfd)) > 0) {
         switch (m.type) {
         case M_HELLO: {
+            if (w->peer_pid <= 0 || m.a != w->peer_pid || w->peer_uid != session_uid) { gone(w); return; }
             if (mfd >= 0) {
                 void *p = mmap(0, (size_t)2 * BUF_W * BUF_H * 4, PROT_READ, MAP_SHARED, mfd, 0);
                 close(mfd);
@@ -329,9 +449,26 @@ void wm_client(Win *w) {
             if (w->peer_uid != 0) { dock_app_mask = m.a & 255; settings_save(); dirty = 1; MARK("DOCK apps=%d", dock_app_mask); }
             break;
         case M_AUTH_REQ:
-            if (w->peer_uid != 0) {
-                char result[128] = "ERROR";
-                if (!strncmp(m.s, "CHANGE ", 7) || !strncmp(m.s, "ROTATE ", 7) || !strncmp(m.s, "RECOVER ", 8))
+            if (w->peer_uid == session_uid && w->peer_pid == w->pid && !strcmp(w->exe, "settings")) {
+                char proc[64], actual[128]; snprintf(proc, sizeof proc, "/proc/%d/exe", (int)w->peer_pid);
+                ssize_t n = readlink(proc, actual, sizeof actual - 1);
+                if (n < 0) break;
+                actual[n] = 0;
+                const char *base = strrchr(actual, '/');
+                if (!base || strcmp(base + 1, "settings")) break;
+                char result[2048] = "ERROR";
+                char own[80], status_cmd[64], set_cmd[64], change_cmd[64], rotate_cmd[64], recover_cmd[64], add_cmd[64];
+                snprintf(own, sizeof own, "%s", session_name);
+                snprintf(status_cmd, sizeof status_cmd, "STATUS %s", own);
+                snprintf(set_cmd, sizeof set_cmd, "SETHEX %s ", own);
+                snprintf(change_cmd, sizeof change_cmd, "CHANGE %s ", own);
+                snprintf(rotate_cmd, sizeof rotate_cmd, "ROTATE %s ", own);
+                snprintf(recover_cmd, sizeof recover_cmd, "RECOVER %s ", own);
+                snprintf(add_cmd, sizeof add_cmd, "ADD %s ", own);
+                if (!strcmp(m.s, "LIST") || !strcmp(m.s, status_cmd) ||
+                    !strncmp(m.s, set_cmd, strlen(set_cmd)) || !strncmp(m.s, change_cmd, strlen(change_cmd)) ||
+                    !strncmp(m.s, rotate_cmd, strlen(rotate_cmd)) || !strncmp(m.s, recover_cmd, strlen(recover_cmd)) ||
+                    !strncmp(m.s, add_cmd, strlen(add_cmd)))
                     flx_auth_request(m.s, result, sizeof result);
                 msg_send(w->fd, M_AUTH_RES, 0, 0, 0, 0, 0, result, -1);
             }

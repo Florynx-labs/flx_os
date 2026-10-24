@@ -92,6 +92,7 @@ if [ -d /src/build/wallpapers ]; then
 fi
 if [ -d /src/build/icons ]; then
   cp -r /src/build/icons/*.png "$R/share/icons/" 2>/dev/null || true
+  if [ -d /src/build/icons/lucide ]; then cp -r /src/build/icons/lucide "$R/share/icons/"; fi
 fi
 [ -f "$R/share/wallpapers/bloom.raw" ] || /kbuild/obj/tools/gen_wallpaper "$R/share/wallpapers"
 

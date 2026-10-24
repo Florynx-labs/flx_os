@@ -11,6 +11,7 @@
 set -e
 cd "$(dirname "$0")"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+QMP="${FLX_QMP:-build/flx-qmp.sock}"
 mkdir -p build data
 
 HOST_ARCH="$(uname -m)"
@@ -25,7 +26,7 @@ export FLX_ARCH="$TARGET"
 KERNEL_IMG="build/Image"
 [ "$TARGET" = "x86_64" ] && KERNEL_IMG="build/bzImage"
 if [ ! -f "$KERNEL_IMG" ] || [ ! -f build/initramfs.cpio ] || [ ! -f build/home.img ] || \
-   [ -n "$(find src kernel docker third_party tools scripts assets -type f -newer build/initramfs.cpio | head -1)" ]; then
+   [ -n "$(find src getra kernel docker third_party tools scripts assets -type f -newer build/initramfs.cpio | head -1)" ]; then
   ./build.sh
 fi
 

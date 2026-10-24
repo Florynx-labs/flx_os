@@ -19,13 +19,13 @@ static StoreApp catalog[] = {
     { "explorer", "Fichiers", "Système", "Gestionnaire de fichiers moderne avec panneau latéral rapide", "1.1.0", "280 Ko", "explorer", 1, 1 },
     { "browser",  "Navigateur Web", "Internet", "Navigateur rapide avec support TLS / BearSSL et moteur HTML5", "2.0.1", "540 Ko", "browser", 1, 1 },
     { "settings", "Paramètres", "Système", "Panneau de configuration complet du système et des comptes", "1.0.4", "460 Ko", "settings", 1, 1 },
-    { "code",     "Code - OSS", "Développement", "Éditeur de code extensible avec coloration syntaxique", "1.92.0", "64 Mo", "notepad", 1, 0 },
-    { "libreoffice", "LibreOffice", "Bureautique", "Suite bureautique complète (Traitement de texte, Tableur)", "7.6.2", "180 Mo", "proof", 0, 0 },
-    { "vlc",      "VLC Media Player", "Multimédia", "Lecteur multimédia universel haute performance", "3.0.20", "42 Mo", "media", 0, 0 },
-    { "mines",    "Démineur FLX", "Jeux", "Le jeu classique revisité avec design néo-glass", "1.0.0", "250 Ko", "minesweeper", 1, 1 },
+    { "code",     "Code - OSS", "Développement", "Éditeur de code extensible avec coloration syntaxique", "1.92.0", "64 Mo", "file-pen-line", 1, 0 },
+    { "libreoffice", "LibreOffice", "Bureautique", "Suite bureautique complète (Traitement de texte, Tableur)", "7.6.2", "180 Mo", "file-text", 0, 0 },
+    { "vlc",      "VLC Media Player", "Multimédia", "Lecteur multimédia universel haute performance", "3.0.20", "42 Mo", "music", 0, 0 },
+    { "mines",    "Démineur FLX", "Jeux", "Le jeu classique revisité avec design néo-glass", "1.0.0", "250 Ko", "bomb", 1, 1 },
     { "calc",     "Calculatrice", "Utilitaires", "Calculatrice scientifique et arithmétique", "1.0.1", "260 Ko", "calc", 1, 1 },
     { "taskmgr",  "Gestionnaire de tâches", "Système", "Surveillance des performances CPU, mémoire et processus", "1.1.0", "270 Ko", "taskmgr", 1, 1 },
-    { "gimp",     "GIMP Image Editor", "Création", "Éditeur d'images professionnel et retouche photo", "2.10.36", "85 Mo", "gallery", 0, 0 },
+    { "gimp",     "GIMP Image Editor", "Création", "Éditeur d'images professionnel et retouche photo", "2.10.36", "85 Mo", "image", 0, 0 },
 };
 #define NCATALOG (int)(sizeof(catalog) / sizeof(catalog[0]))
 
@@ -35,20 +35,6 @@ static const char *TABS[] = { "Tous", "Applications", "Jeux", "Outils", "Dévelo
 
 static char search_query[64] = "";
 static Scroll sc;
-
-// Cached icon images for non-app catalog entries
-static Image *extra_icons[NCATALOG];
-static int icon_tried[NCATALOG];
-
-static Image *load_catalog_icon(int idx) {
-    if (!icon_tried[idx]) {
-        char path[64];
-        snprintf(path, sizeof path, "/share/icons/%s.png", catalog[idx].icon);
-        extra_icons[idx] = image_load(path);
-        icon_tried[idx] = 1;
-    }
-    return extra_icons[idx];
-}
 
 static void draw(Canvas *c) {
     float W = U.w, H = U.h;
@@ -136,9 +122,7 @@ static void draw(Canvas *c) {
             if (app_id >= 0) {
                 icon_app(c, app_id, cx + 16, cy + 18, 44);
             } else {
-                Image *img = load_catalog_icon(i);
-                if (img) g_image(c, img, cx + 16, cy + 18, 44, 44, 0, 255);
-                else icon_glyph(c, G_APPS, cx + 38, cy + 40, 24, TH.accent);
+                icon_draw(c, app->icon, cx + 38, cy + 40, 28, TH.accent, ICON_NORMAL);
             }
 
             text(c, F_SEMI, 15, 0, cx + 72, cy + 32, TH.text, app->name);

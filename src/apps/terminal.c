@@ -15,6 +15,13 @@
 #define TABH 38
 #define SB 1000
 typedef struct { uint32_t cp; uint8_t fg, bold; } Cell;
+typedef struct {
+    Cell *grid; int cols, rows, total_lines, cx, cy, cur_fg, cur_bold, mfd, view_off;
+    pid_t child; char esc[64]; int esc_n, in_esc; unsigned utf_cp; int utf_left; char title[48];
+} TermTab;
+#define MAX_TABS 8
+static TermTab tabs[MAX_TABS]; static int ntab, active_tab;
+static AppDef A;
 static Cell *grid;            // SB + rows lines, ring-free: we memmove on scroll
 static int cols = 80, rows = 24, total_lines;   // total_lines = scrollback lines in use above the screen
 static int cx, cy;            // cursor within the screen
@@ -25,6 +32,22 @@ static char esc[64]; static int esc_n, in_esc;
 static unsigned utf_cp; static int utf_left;
 static const uint32_t PAL[16] = { 0xFF0C0C0C, 0xFFE74856, 0xFF16C60C, 0xFFF9F1A5, 0xFF3B78FF, 0xFFB4009E, 0xFF61D6D6, 0xFFCCCCCC,
                                   0xFF767676, 0xFFE74856, 0xFF16C60C, 0xFFF9F1A5, 0xFF3B78FF, 0xFFB4009E, 0xFF61D6D6, 0xFFF2F2F2 };
+
+static void tab_save(int i) {
+    char title[48] = {0};
+    snprintf(title, sizeof title, "%s", tabs[i].title);
+    tabs[i] = (TermTab){ .grid=grid, .cols=cols, .rows=rows, .total_lines=total_lines, .cx=cx, .cy=cy,
+        .cur_fg=cur_fg, .cur_bold=cur_bold, .mfd=mfd, .view_off=view_off, .child=child,
+        .esc_n=esc_n, .in_esc=in_esc, .utf_cp=utf_cp, .utf_left=utf_left };
+    memcpy(tabs[i].esc, esc, sizeof esc);
+    snprintf(tabs[i].title, sizeof tabs[i].title, "%s", title[0] ? title : "flx@flx-os: ~");
+}
+static void tab_load(int i) {
+    active_tab=i; grid=tabs[i].grid; cols=tabs[i].cols; rows=tabs[i].rows; total_lines=tabs[i].total_lines;
+    cx=tabs[i].cx; cy=tabs[i].cy; cur_fg=tabs[i].cur_fg; cur_bold=tabs[i].cur_bold; mfd=tabs[i].mfd;
+    view_off=tabs[i].view_off; child=tabs[i].child; esc_n=tabs[i].esc_n; in_esc=tabs[i].in_esc;
+    memcpy(esc,tabs[i].esc,sizeof esc); utf_cp=tabs[i].utf_cp; utf_left=tabs[i].utf_left; A.extra_fd=mfd;
+}
 
 static Cell *line(int screen_y) { return grid + (size_t)(SB + screen_y) * 200; }
 static void clear_line(Cell *l, int from) { for (int i = from; i < 200; i++) l[i] = (Cell){ ' ', 7, 0 }; }
@@ -104,10 +127,64 @@ static void resize_pty(void) {
     if (mfd >= 0) ioctl(mfd, TIOCSWINSZ, &ws);
 }
 
+static int session_start(void) {
+    grid = calloc((size_t)(SB + 200) * 200, sizeof(Cell));
+    if (!grid) return -1;
+    for (int y = -SB; y < 200; y++) clear_line(grid + (size_t)(SB + y) * 200, 0);
+    cols = 0; rows = 0; total_lines = cx = cy = view_off = 0; cur_fg = 7; cur_bold = 0;
+    esc_n = in_esc = utf_left = 0; utf_cp = 0; memset(esc, 0, sizeof esc);
+    resize_pty();
+    mfd = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
+    if (mfd < 0 || grantpt(mfd) || unlockpt(mfd)) { if (mfd >= 0) close(mfd); mfd = -1; free(grid); grid = 0; return -1; }
+    char *sn = ptsname(mfd);
+    struct winsize ws = { (unsigned short)rows, (unsigned short)cols, 0, 0 };
+    ioctl(mfd, TIOCSWINSZ, &ws);
+    child = fork();
+    if (child == 0) {
+        setsid();
+        int s = open(sn, O_RDWR);
+        ioctl(s, TIOCSCTTY, 0);
+        dup2(s, 0); dup2(s, 1); dup2(s, 2);
+        if (s > 2) close(s);
+        signal(SIGPIPE, SIG_DFL);
+        setenv("TERM", "xterm-256color", 1);
+        execl("/bin/flxsh", "flxsh", (char *)0);
+        _exit(127);
+    }
+    if (child < 0) { close(mfd); mfd = -1; free(grid); grid = 0; return -1; }
+    A.extra_fd = mfd;
+    return 0;
+}
+static void close_tab(int i) {
+    if (i < 0 || i >= ntab) return;
+    if (ntab == 1) { app_quit(); return; }
+    if (i == active_tab) tab_save(i);
+    if (tabs[i].child > 0) kill(-tabs[i].child, SIGHUP);
+    if (tabs[i].mfd >= 0) close(tabs[i].mfd);
+    free(tabs[i].grid);
+    for (int k = i; k + 1 < ntab; k++) tabs[k] = tabs[k + 1];
+    memset(&tabs[--ntab], 0, sizeof tabs[0]);
+    if (i < active_tab) active_tab--;
+    else if (i == active_tab) active_tab = i < ntab ? i : ntab - 1;
+    tab_load(active_tab); app_redraw();
+}
+static void create_tab(void) {
+    if (ntab >= MAX_TABS) return;
+    tab_save(active_tab);
+    int i = ntab++;
+    if (session_start()) { ntab--; tab_load(active_tab); return; }
+    snprintf(tabs[i].title, sizeof tabs[i].title, "Session %d", i + 1);
+    tab_save(i); tab_load(i); app_redraw();
+}
+static void select_tab(int i) {
+    if (i < 0 || i >= ntab || i == active_tab) return;
+    tab_save(active_tab); tab_load(i); app_redraw();
+}
+
 static void on_fd(void) {
     unsigned char b[8192];
     int n = read(mfd, b, sizeof b);
-    if (n <= 0) { LOG("terminal: shell exited"); app_quit(); }
+    if (n <= 0) { LOG("terminal: shell exited"); close_tab(active_tab); return; }
     feed(b, n);
     app_redraw();
 }
@@ -117,15 +194,24 @@ static void send_str(const char *s) { if (mfd >= 0) write(mfd, s, strlen(s)); }
 static void draw(Canvas *c) {
     resize_pty();
     g_rect(c, 0, 0, U.w, U.h, 0xFF060A0C);
-    // tab strip - FLX OS Terminal
+    // In-window PTY tabs; the plus button always creates a session here.
     g_rect(c, 0, 0, U.w, TABH, 0xFF0A1114);
-    g_rrect(c, 10, 6, 200, TABH - 6, 7, 0, 0xFF060A0C);
-    g_rrect_line(c, 10, 6, 200, TABH - 6, 7, 1, 0x28F5AD32);
-    icon_app(c, APP_TERMINAL, 20, 13, 18);
-    text(c, F_REG, 13, 0, 46, 28, 0xFFF2F5F4, "flx@flx-os: ~");
-    icon_glyph(c, G_CLOSE, 192, 22, 9, 0xFF9A9A9A);
-    icon_glyph(c, G_PLUS, 232, 22, 12, 0xFF9A9A9A);
-    if (ui_click(220, 6, 26, 28)) app_launch("terminal", 0);
+    float tabw = fminf(190, (U.w - 164) / maxi(1, ntab)), tabx = 8;
+    for (int i = 0; i < ntab; i++) {
+        float x = tabx + i * (tabw + 5);
+        bool active = i == active_tab;
+        g_rrect(c, x, 6, tabw, TABH - 6, 8, 0, active ? 0xFF060A0C : 0xFF10191D);
+        if (active) g_rrect_line(c, x, 6, tabw, TABH - 6, 8, 1, 0x28F5AD32);
+        icon_app(c, APP_TERMINAL, x + 10, 13, 17);
+        char *name = text_ellipsize(F_REG, 12, tabs[i].title, tabw - 54);
+        text(c, F_REG, 12, 0, x + 34, 27, 0xFFF2F5F4, name); free(name);
+        icon_glyph(c, G_CLOSE, x + tabw - 13, 21, 9, 0xFF9A9A9A);
+        if (ui_click(x, 6, tabw - 20, 28)) select_tab(i);
+        if (ui_click(x + tabw - 20, 6, 18, 28)) close_tab(i);
+    }
+    float plus_x = tabx + ntab * (tabw + 5) + 2;
+    icon_glyph(c, G_PLUS, plus_x + 11, 22, 13, 0xFFB7C5C7);
+    if (ui_click(plus_x, 5, 28, 30)) create_tab();
     // Right action buttons (command palette and settings)
     float rx = U.w - 80;
     ui_card(rx, 6, 32, 26);
@@ -173,37 +259,17 @@ static void draw(Canvas *c) {
     }
 }
 
-static AppDef A = { .exe = "terminal", .title = "FLX Terminal", .w = 960, .h = 600, .draw = draw, .on_fd = on_fd };
-
 static void init(int argc, char **argv) {
     (void)argc; (void)argv;
-    grid = calloc((size_t)(SB + 200) * 200, sizeof(Cell));
-    for (int y = -SB; y < 200; y++) clear_line(grid + (size_t)(SB + y) * 200, 0);
     U.w = A.w; U.h = A.h;
-    cols = 0; rows = 0;
-    resize_pty();
-    mfd = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
-    grantpt(mfd); unlockpt(mfd);
-    char *sn = ptsname(mfd);
-    struct winsize ws = { (unsigned short)rows, (unsigned short)cols, 0, 0 };
-    ioctl(mfd, TIOCSWINSZ, &ws);
-    child = fork();
-    if (child == 0) {
-        setsid();
-        int s = open(sn, O_RDWR);
-        ioctl(s, TIOCSCTTY, 0);
-        dup2(s, 0); dup2(s, 1); dup2(s, 2);
-        if (s > 2) close(s);
-        signal(SIGPIPE, SIG_DFL);
-        setenv("TERM", "xterm-256color", 1);
-        execl("/bin/flxsh", "flxsh", (char *)0);
-        _exit(127);
-    }
-    A.extra_fd = mfd;
-    MARK("TERMINAL pty %s shell %d", sn, child);
+    ntab = 1; active_tab = 0; mfd = -1; child = -1;
+    if (session_start()) { app_quit(); return; }
+    snprintf(tabs[0].title, sizeof tabs[0].title, "flx@flx-os: ~");
+    tab_save(0); tab_load(0);
+    MARK("TERMINAL tabs ready");
 }
 
 int main(int argc, char **argv) {
-    A.init = init;
+    A = (AppDef){ .exe = "terminal", .title = "FLX Terminal", .w = 960, .h = 600, .draw = draw, .init = init, .on_fd = on_fd };
     return app_main(&A, argc, argv);
 }

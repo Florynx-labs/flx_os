@@ -894,7 +894,7 @@ fn draw_header(c: *mut Canvas, w: f32) {
         g_line(c, 0.0, 67.0, w, 67.0, 1.0, LINE);
         icon_app(c, 6, 27.0, 13.0, 34.0)
     }
-    draw_text(c, 3, 22.0, 70.0, 31.0, TXT, "Task Manager");
+    draw_text(c, 3, 22.0, 70.0, 31.0, TXT, "Gestionnaire de tâches");
     draw_text(
         c,
         2,
@@ -953,7 +953,7 @@ fn draw_sidebar(c: *mut Canvas, s: &mut AppState, w: f32, h: f32) {
         icon_app(c, 6, 28.0, h - 37.0, 28.0)
     }
     draw_text(c, 3, 12.0, 51.0, h - 36.0, TXT, "FLX OS");
-    draw_text(c, 2, 9.0, 51.0, h - 20.0, MUTED, "Task Manager v1.0");
+    draw_text(c, 2, 10.0, 51.0, h - 20.0, MUTED, "Surveillance FLX v1.0");
     let _ = w;
 }
 fn draw_right(c: *mut Canvas, s: &mut AppState, x: f32, y: f32, w: f32, h: f32) {
@@ -961,30 +961,30 @@ fn draw_right(c: *mut Canvas, s: &mut AppState, x: f32, y: f32, w: f32, h: f32) 
     let top_h = (h * 0.39).max(190.0);
     box_panel(c, x, y, w, top_h);
     unsafe { icon_glyph(c, 34, x + 16.0, y + 19.0, 14.0, CYAN) }
-    draw_text(c, 3, 12.0, x + 30.0, y + 23.0, TXT, "Informations système");
+    draw_text(c, 3, 13.0, x + 30.0, y + 23.0, TXT, "Informations système");
     let mut yy = y + 49.0;
-    draw_text(c, 2, 10.0, x + 12.0, yy, SUB, "Système");
+    draw_text(c, 2, 11.0, x + 12.0, yy, SUB, "Système");
     yy += 17.0;
-    draw_text(c, 2, 10.0, x + 12.0, yy, CYAN2, &snap.os_name);
+    draw_text(c, 2, 11.0, x + 12.0, yy, CYAN2, &snap.os_name);
     yy += 15.0;
     draw_text(
         c,
         2,
-        9.0,
+        10.5,
         x + 12.0,
         yy,
         MUTED,
         &format!("Linux {} · {}", snap.kernel, std::env::consts::ARCH),
     );
     yy += 24.0;
-    draw_text(c, 2, 10.0, x + 12.0, yy, SUB, "Processeur");
+    draw_text(c, 2, 11.0, x + 12.0, yy, SUB, "Processeur");
     yy += 16.0;
     draw_text(c, 2, 9.0, x + 12.0, yy, TXT, &truncate(&snap.cpu_name, 24));
     yy += 14.0;
     draw_text(
         c,
         2,
-        9.0,
+        10.5,
         x + 12.0,
         yy,
         MUTED,
@@ -1001,12 +1001,12 @@ fn draw_right(c: *mut Canvas, s: &mut AppState, x: f32, y: f32, w: f32, h: f32) 
         .memory
         .available_kib
         .map(|a| snap.memory.total_kib.saturating_sub(a));
-    draw_text(c, 2, 10.0, x + 12.0, yy, SUB, "Mémoire");
+    draw_text(c, 2, 11.0, x + 12.0, yy, SUB, "Mémoire");
     yy += 16.0;
     draw_text(
         c,
         2,
-        9.0,
+        10.5,
         x + 12.0,
         yy,
         TXT,
@@ -1019,13 +1019,13 @@ fn draw_right(c: *mut Canvas, s: &mut AppState, x: f32, y: f32, w: f32, h: f32) 
         ),
     );
     yy += 24.0;
-    draw_text(c, 2, 10.0, x + 12.0, yy, SUB, "Stockage · /");
+    draw_text(c, 2, 11.0, x + 12.0, yy, SUB, "Stockage · /");
     yy += 16.0;
     let fs = snap.filesystem;
     draw_text(
         c,
         2,
-        9.0,
+        10.5,
         x + 12.0,
         yy,
         TXT,
@@ -1143,7 +1143,7 @@ fn draw_right(c: *mut Canvas, s: &mut AppState, x: f32, y: f32, w: f32, h: f32) 
         draw_text(
             c,
             2,
-            9.0,
+            10.5,
             x + 12.0,
             sensor_y + 48.0,
             MUTED,
@@ -1245,10 +1245,10 @@ fn table_page(c: *mut Canvas, s: &mut AppState, x: f32, y: f32, w: f32, h: f32, 
     let title = match page {
         Page::Applications => "Applications FLX",
         Page::Services => "Services détectés",
-        _ => "Processus",
+        _ => "Processus et applications",
     };
-    draw_text(c, 3, 18.0, x + 12.0, y + 24.0, TXT, title);
-    let search_x = x + w * 0.30;
+    draw_text(c, 3, 19.0, x + 12.0, y + 24.0, TXT, title);
+    let search_x = x + w * 0.32;
     let result = unsafe {
         ui_field(
             31,
@@ -1256,7 +1256,7 @@ fn table_page(c: *mut Canvas, s: &mut AppState, x: f32, y: f32, w: f32, h: f32, 
             s.query.len() as i32,
             search_x,
             y + 5.0,
-            (w * 0.40).max(135.0),
+            (w * 0.38).max(145.0),
             30.0,
             "Rechercher un processus…",
         )
@@ -1298,7 +1298,7 @@ fn table_page(c: *mut Canvas, s: &mut AppState, x: f32, y: f32, w: f32, h: f32, 
         .iter()
         .enumerate()
     {
-        draw_text(c, 2, 10.0, cols[i], hy + 18.0, SUB, l);
+        draw_text(c, 2, 11.0, cols[i], hy + 18.0, SUB, l);
         let key = match i {
             0 => Sort::Name,
             1 => Sort::Pid,
@@ -1316,7 +1316,7 @@ fn table_page(c: *mut Canvas, s: &mut AppState, x: f32, y: f32, w: f32, h: f32, 
         }
     }
     let rows_y = hy + 30.0;
-    let rh = 30.0;
+    let rh = 34.0;
     let row_area = (y + h - rows_y - 24.0).max(20.0);
     let mut clip = [0i32; 4];
     unsafe {
@@ -1369,7 +1369,7 @@ fn table_page(c: *mut Canvas, s: &mut AppState, x: f32, y: f32, w: f32, h: f32, 
         draw_text(
             c,
             2,
-            10.5,
+            11.5,
             x + 34.0,
             ry + 19.0,
             if is_selected { TXT } else { SUB },
@@ -1379,9 +1379,9 @@ fn table_page(c: *mut Canvas, s: &mut AppState, x: f32, y: f32, w: f32, h: f32, 
         draw_text(
             c,
             2,
-            10.0,
+            11.0,
             cols[2],
-            ry + 19.0,
+            ry + 21.0,
             if p.cpu.unwrap_or(0.0) > 10.0 {
                 GOLD
             } else {
@@ -1394,28 +1394,28 @@ fn table_page(c: *mut Canvas, s: &mut AppState, x: f32, y: f32, w: f32, h: f32, 
         draw_text(
             c,
             2,
-            10.0,
+            11.0,
             cols[3],
-            ry + 19.0,
+            ry + 21.0,
             CYAN2,
             &fmt_bytes(p.rss_kib * 1024),
         );
         draw_text(
             c,
             2,
-            9.0,
+            10.0,
             cols[4],
-            ry + 19.0,
+            ry + 21.0,
             SUB,
             &format!("{} / {}", fmt_rate(p.read_bps), fmt_rate(p.write_bps)),
         );
-        draw_text(c, 2, 9.0, cols[5], ry + 19.0, MUTED, "—");
+        draw_text(c, 2, 10.0, cols[5], ry + 21.0, MUTED, "—");
         draw_text(
             c,
             2,
-            9.0,
+            10.0,
             cols[6],
-            ry + 19.0,
+            ry + 21.0,
             match p.state {
                 'R' => GREEN,
                 'S' => SUB,
@@ -2037,9 +2037,10 @@ extern "C" fn main_init(_: i32, _: *mut *mut i8) {
 fn main() {
     let mut args: Vec<CString> = std::env::args().map(|s| cstr(&s)).collect();
     let mut argv: Vec<*mut i8> = args.iter_mut().map(|s| s.as_ptr() as *mut i8).collect();
+    let app_title = cstr("Gestionnaire de tâches");
     let mut a = AppDef {
         exe: b"taskmgr\0".as_ptr() as _,
-        title: b"Task Manager\0".as_ptr() as _,
+        title: app_title.as_ptr(),
         w: 1400,
         h: 820,
         mica: 1,

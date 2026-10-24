@@ -35,8 +35,8 @@ bool ui_button(float x, float y, float w, float h, const char *lbl, int kind) {
     if (kind == B_ACCENT) { bg = prs ? c_mix(TH.accent, TH.bg, 0.2f) : hov ? c_mix(TH.accent, 0xFFFFFFFF, 0.12f) : TH.accent; fg = TH.accent_fg; }
     else if (kind == B_SUBTLE) bg = prs ? TH.press : hov ? TH.hover : 0;
     else bg = prs ? TH.card2 : hov ? c_mix(TH.card, TH.card2, 0.6f) : TH.card;
-    if (bg >> 24) g_rrect(UC, x, y, w, h, 5, 5, bg);
-    if (kind == B_STD) g_rrect_line(UC, x, y, w, h, 5, 1, TH.line);
+    if (bg >> 24) g_rrect(UC, x, y, w, h, FLX_RADIUS_CONTROL, FLX_RADIUS_CONTROL, bg);
+    if (kind == B_STD) g_rrect_line(UC, x, y, w, h, FLX_RADIUS_CONTROL, FLX_BORDER_WIDTH, TH.line);
     float tw = text_w(F_REG, 15, 0, lbl);
     text(UC, F_REG, 15, 0, x + (w - tw) / 2, y + h / 2 + 5.5f, prs && kind == B_STD ? TH.sub : fg, lbl);
     return ui_click(x, y, w, h);
@@ -44,8 +44,8 @@ bool ui_button(float x, float y, float w, float h, const char *lbl, int kind) {
 
 bool ui_icon_btn(float x, float y, float w, float h, int glyph, int active) {
     bool hov = ui_hover(x, y, w, h), prs = ui_pressing(x, y, w, h);
-    if (active) g_rrect(UC, x, y, w, h, 5, 5, TH.accent_soft);
-    else if (hov || prs) g_rrect(UC, x, y, w, h, 5, 5, prs ? TH.press : TH.hover);
+    if (active) g_rrect(UC, x, y, w, h, FLX_RADIUS_CONTROL, FLX_RADIUS_CONTROL, TH.accent_soft);
+    else if (hov || prs) g_rrect(UC, x, y, w, h, FLX_RADIUS_CONTROL, FLX_RADIUS_CONTROL, prs ? TH.press : TH.hover);
     icon_glyph(UC, glyph, x + w / 2, y + h / 2, fminf(w, h) * 0.5f, active ? TH.accent : TH.text);
     return ui_click(x, y, w, h);
 }
@@ -53,8 +53,8 @@ bool ui_icon_btn(float x, float y, float w, float h, int glyph, int active) {
 bool ui_toggle(float x, float y, int *on) {
     float w = 44, h = 22;
     bool hov = ui_hover(x, y, w, h);
-    if (*on) g_rrect(UC, x, y, w, h, 11, 11, hov ? c_mix(TH.accent, 0xFFFFFFFF, 0.1f) : TH.accent);
-    else { g_rrect(UC, x, y, w, h, 11, 11, hov ? TH.hover : 0); g_rrect_line(UC, x, y, w, h, 11, 1.2f, TH.sub); }
+    if (*on) g_rrect(UC, x, y, w, h, FLX_RADIUS_PILL, FLX_RADIUS_PILL, hov ? c_mix(TH.accent, 0xFFFFFFFF, 0.1f) : TH.accent);
+    else { g_rrect(UC, x, y, w, h, FLX_RADIUS_PILL, FLX_RADIUS_PILL, hov ? TH.hover : 0); g_rrect_line(UC, x, y, w, h, FLX_RADIUS_PILL, 1.2f, TH.sub); }
     g_circle(UC, *on ? x + w - 11 : x + 11, y + 11, hov ? 7 : 6, *on ? TH.accent_fg : TH.sub);
     if (ui_click(x, y, w, h)) { *on = !*on; return true; }
     return false;
@@ -85,8 +85,8 @@ static int field_impl(int id, char *buf, int cap, float x, float y, float w, flo
             U.consumed = 1;
         }
     }
-    g_rrect(UC, x, y, w, h, 5, 5, foc ? (TH.dark ? 0xFF1F1F1F : 0xFFFFFFFF) : hov ? c_mix(TH.card, TH.card2, 0.7f) : TH.card);
-    g_rrect_line(UC, x, y, w, h, 5, 1, TH.line);
+    g_rrect(UC, x, y, w, h, FLX_RADIUS_CONTROL, FLX_RADIUS_CONTROL, foc ? (TH.dark ? 0xFF1F1F1F : 0xFFFFFFFF) : hov ? c_mix(TH.card, TH.card2, 0.7f) : TH.card);
+    g_rrect_line(UC, x, y, w, h, FLX_RADIUS_CONTROL, FLX_BORDER_WIDTH, TH.line);
     if (foc) g_rrect(UC, x + 1, y + h - 2, w - 2, 2, 0, 1, TH.accent);
     else g_rect(UC, x + 4, y + h - 1, w - 8, 1, TH.dim);
     int sc[4];
@@ -130,12 +130,12 @@ void ui_scroll(Scroll *s, float x, float y, float w, float h, float content_h) {
         s->pos = clampf(s->pos, 0, s->max);
         ty = y + (h - th) * (s->pos / s->max);
         bool hv = in(U.mx, U.my, bx - 6, y, 14, h) || s->drag;
-        g_rrect(UC, bx + (hv ? -1 : 1), ty + 2, hv ? 6 : 3, th - 4, 3, 3, c_alpha(TH.text, hv ? 0.45f : 0.3f));
+        g_rrect(UC, bx + (hv ? -1 : 1), ty + 2, hv ? 6 : 3, th - 4, FLX_SPACE_UNIT, FLX_SPACE_UNIT, c_alpha(TH.text, hv ? 0.45f : 0.3f));
     } else s->pos = 0;
 }
 
 void ui_card(float x, float y, float w, float h) {
-    g_rrect(UC, x, y, w, h, 7, 7, TH.dark ? 0xFF2B2B2B : 0xFFFFFFFF);
-    g_rrect_line(UC, x, y, w, h, 7, 1, TH.dark ? 0xFF353535 : 0xFFE6E6E6);
+    g_rrect(UC, x, y, w, h, FLX_RADIUS_CARD, FLX_RADIUS_CARD, TH.dark ? 0xFF2B2B2B : 0xFFFFFFFF);
+    g_rrect_line(UC, x, y, w, h, FLX_RADIUS_CARD, FLX_BORDER_WIDTH, TH.dark ? 0xFF353535 : 0xFFE6E6E6);
 }
 void ui_divider(float x, float y, float w) { g_rect(UC, x, y, w, 1, TH.line); }

@@ -1,7 +1,9 @@
 // Browser: the Lumen OS 2 HTML/CSS engine (MIT) in a FLX OS window. One worker thread
 // fetches (our HTTP/TLS), parses, styles and lays out pages; image loaders decode off the
-// UI thread; the UI paints the published display list. No JavaScript.
+// UI thread; the UI paints the published display list. Inline scripts run in a
+// bounded QuickJS context with a deliberately small page API.
 #include "../web/web.h"
+#include "../web/js.h"
 
 typedef struct Tab {
     char url[2048], title[256];
@@ -131,8 +133,8 @@ static void gather_css(Node *n, Doc *d, Sheet *sh, int *nlink) {
 }
 
 static char *error_page(const char *url, const char *err) {
-    return strfmt("<html><body style='margin:48px;background:#ffffff;color:#1a1a1a'><h1 style='font-size:32px'>Hmm... can't reach this page</h1>"
-                  "<p style='font-size:18px'>%s</p><p style='color:#666'>%s</p></body></html>", err, url);
+    return strfmt("<html><body style='margin:48px;background:#081317;color:#e7f1f1'><h1 style='font-size:30px'>Page inaccessible</h1>"
+                  "<p style='font-size:17px'>%s</p><p style='color:#9eb2b7'>%s</p><p style='color:#f5ad32'>Vérifie l'adresse et ta connexion, puis réessaie.</p></body></html>", err, url);
 }
 
 static void do_load(Tab *t, char *url, char *body, int hist_mode) {
@@ -174,8 +176,26 @@ static void do_load(Tab *t, char *url, char *body, int hist_mode) {
         html[o] = 0;
         hlen = o;
     } else { html = r->body; r->body = 0; hlen = r->len; }
+    char *source = strndup(html, hlen);
+    if (!source) { free(html); http_free(r); free(real); return; }
     Doc *d = html_parse(html, hlen, final);
     free(html);
+    char *written = web_js_run(d);
+    if (written && *written) {
+        const char *close = strcasestr(source, "</body>");
+        size_t pos = close ? (size_t)(close - source) : strlen(source);
+        size_t wl = strlen(written), sl = strlen(source);
+        char *expanded = malloc(sl + wl + 1);
+        if (expanded) {
+            memcpy(expanded, source, pos);
+            memcpy(expanded + pos, written, wl);
+            memcpy(expanded + pos + wl, source + pos, sl - pos + 1);
+            Doc *with_write = html_parse(expanded, sl + wl, final);
+            if (with_write) { doc_free(d); d = with_write; }
+            free(expanded);
+        }
+    }
+    free(source); free(written);
     t->progress = 0.72f;
     Sheet *sh = css_parse(UA_CSS, 0);
     int nlink = 0;
@@ -287,7 +307,7 @@ static void go(const char *input) {
     bool looks_url = !strchr(input, ' ') && (strchr(input, '.') || !strncmp(input, "localhost", 9));
     if (has_scheme) url = xstrdup(input);
     else if (looks_url) url = strfmt("https://%s", input);
-    else { char *q = url_encode(input); url = strfmt("https://html.duckduckgo.com/html/?q=%s", q); free(q); }
+    else { char *q = url_encode(input); url = strfmt("https://lite.duckduckgo.com/lite/?q=%s", q); free(q); }
     navigate(tabs[cur], url, 0, 0);
     free(url);
 }
@@ -359,12 +379,12 @@ static int editing, addr_sel, last_ver = -1;
 static char addr[2048];
 static char hover_url[512];
 static const char *QUICK[][2] = {
-    { "FLX OS Docs", "https://github.com/Florynx-labs" },
-    { "Wikipédia", "https://fr.m.wikipedia.org/wiki/Syst%C3%A8me_d%27exploitation" },
+    { "Recherche web", "https://lite.duckduckgo.com/lite/" },
+    { "FLX OS · GitHub", "https://github.com/Florynx-labs" },
+    { "Wikipédia", "https://fr.wikipedia.org/wiki/Syst%C3%A8me_d%27exploitation" },
     { "Hacker News", "https://news.ycombinator.com/" },
     { "Météo Direct", "https://open-meteo.com/" },
-    { "FLX Store", "https://florynx.dev/store" },
-    { "DuckDuckGo", "https://lite.duckduckgo.com/lite/" }
+    { "FLX OS · Dépôt", "https://github.com/Florynx-labs" }
 };
 
 static void draw_page(Canvas *c, Tab *t) {
@@ -423,6 +443,18 @@ static void draw_page(Canvas *c, Tab *t) {
                 break;
             }
         }
+        // Some sites still require browser APIs that FLX does not implement.
+        if (!t->loading && dl->n <= 4) {
+            float cw = fminf(540, W - 48), ch = 148, x = (W - cw) / 2, y = top + 46;
+            uint32_t card = TH.dark ? 0xF0101B20 : 0xF7FFFFFF;
+            g_shadow(c, x, y, cw, ch, 16, 18, 55, 5);
+            g_rrect(c, x, y, cw, ch, 16, 16, card);
+            g_rrect_line(c, x, y, cw, ch, 16, 1, TH.line);
+            icon_glyph(c, G_INFO, x + 30, y + 32, 19, TH.accent);
+            text(c, F_SEMI, 16, 0, x + 52, y + 37, TH.text, "Cette page ne s'affiche pas correctement");
+            text(c, F_REG, 13, 0, x + 24, y + 76, TH.sub, "JavaScript ES2023 est actif, mais ce site utilise des API DOM ou réseau encore absentes.");
+            text(c, F_REG, 12, 0, x + 24, y + 101, TH.sub, "Essaie une version légère du site. Les scripts sont isolés et limités en mémoire et en durée.");
+        }
     } else g_rect(c, 0, top, W, view, 0xFFFFFFFF);
     pthread_mutex_unlock(&t->mu);
     g_setclip(c, sc);
@@ -432,13 +464,13 @@ static void draw_start(Canvas *c) {
     float W = U.w, H = U.h, top = TOP;
     g_vgrad(c, 0, top, W, H - top, 0, TH.dark ? 0xFF0B1418 : 0xFFEAF1FB, TH.dark ? 0xFF050A0D : 0xFFF7F7F9);
     icon_logo(c, W / 2, top + 75, 72, 255);
-    text_c(c, F_BOLD, 28, 0, W / 2, top + 170, TH.text, "Où souhaitez-vous aller aujourd'hui ?");
+    text_c(c, F_BOLD, 28, 0, W / 2, top + 170, TH.text, "Rechercher sur le Web");
     float sw = fminf(640, W - 80), sx = (W - sw) / 2, sy = top + 205;
     g_shadow(c, sx, sy, sw, 50, 25, 18, 50, 4);
     g_rrect(c, sx, sy, sw, 50, 25, 25, TH.dark ? 0xFF142028 : 0xFFFFFFFF);
     g_rrect_line(c, sx, sy, sw, 50, 25, 1.5f, TH.dark ? 0xFF2A3D48 : 0xFFD0D7DE);
     icon_glyph(c, G_SEARCH, sx + 28, sy + 25, 18, TH.sub);
-    text(c, F_REG, 15, 0, sx + 50, sy + 31, TH.dim, "Rechercher avec DuckDuckGo ou entrer une URL web...");
+    text(c, F_REG, 15, 0, sx + 50, sy + 31, TH.dim, "Recherche web ou adresse…");
     if (ui_click(sx, sy, sw, 50)) { editing = 1; addr[0] = 0; addr_sel = 0; }
     float tw = 150, th = 110, gap = 18;
     int per = mini(6, maxi(1, (int)((W - 80) / (tw + gap))));
@@ -456,7 +488,7 @@ static void draw_start(Canvas *c) {
         text_c(c, F_REG, 13, 0, x + tw / 2, y + 90, TH.text, t); free(t);
         if (ui_click(x, y, tw, th)) navigate(tabs[0], QUICK[i][1], 0, 0);
     }
-    text_c(c, F_REG, 13, 0, W / 2, H - 24, TH.dim, "Navigateur Web FLX · HTML5 & CSS · Sécurisé via BearSSL · Zéro télémétrie");
+    text_c(c, F_REG, 13, 0, W / 2, H - 24, TH.dim, "FLX Web · moteur ECMAScript ES2023 · scripts isolés");
 }
 
 static void page_click(Tab *t) {
@@ -551,14 +583,15 @@ keys_done:
         draw_page(c, t);
     } else draw_start(c);
     // tab strip
-    g_rect(c, 0, 0, W, TABBAR, TH.dark ? 0xFF1F1F1F : 0xFFDFE3E8);
-    g_rrect(c, 8, 6, 260, TABBAR - 6, 8, 0, TH.dark ? 0xFF2B2B2B : 0xFFF7F7F7);
+    g_rect(c, 0, 0, W, TABBAR, TH.dark ? 0xFF091317 : 0xFFE8EEF2);
+    g_rrect(c, 8, 6, 260, TABBAR - 6, 8, 0, TH.dark ? 0xFF101D22 : 0xFFF9FBFC);
+    g_rrect_line(c, 8, 6, 260, TABBAR - 6, 8, 1, TH.line);
     icon_app(c, APP_BROWSER, 20, 13, 18);
     char *tt = text_ellipsize(F_REG, 13, t->title[0] ? t->title : "New tab", 200);
     text(c, F_REG, 13, 0, 46, 28, TH.text, tt); free(tt);
     if (t->loading) { float a = (float)now() * 7; g_arc(c, 250, 23, 6, a, a + 4.2f, 2, TH.accent); }
     // toolbar
-    g_rect(c, 0, TABBAR, W, TOOLBAR, TH.dark ? 0xFF2B2B2B : 0xFFF7F7F7);
+    g_rect(c, 0, TABBAR, W, TOOLBAR, TH.dark ? 0xFF0D191E : 0xFFF4F7F8);
     g_rect(c, 0, TOP - 1, W, 1, TH.line);
     if (ui_icon_btn(8, TABBAR + 6, 36, 36, G_BACK, 0)) history_go(-1);
     if (ui_icon_btn(48, TABBAR + 6, 36, 36, G_FWD, 0)) history_go(1);
@@ -567,7 +600,7 @@ keys_done:
     }
     if (ui_icon_btn(128, TABBAR + 6, 36, 36, G_HOME, 0)) { t->url[0] = 0; pthread_mutex_lock(&t->mu); t->gen++; t->loading = 0; pthread_mutex_unlock(&t->mu); snprintf(t->title, sizeof t->title, "New tab"); }
     float ax = 174, ay = TABBAR + 7, aw = W - ax - 16, ah = 34;
-    g_rrect(c, ax, ay, aw, ah, 17, 17, editing ? (TH.dark ? 0xFF1F1F1F : 0xFFFFFFFF) : (TH.dark ? 0xFF383838 : 0xFFECEEF1));
+    g_rrect(c, ax, ay, aw, ah, 17, 17, editing ? (TH.dark ? 0xFF102127 : 0xFFFFFFFF) : (TH.dark ? 0xFF14232A : 0xFFE7EEF1));
     if (editing) g_rrect_line(c, ax, ay, aw, ah, 17, 2, TH.accent);
     int s[4]; g_getclip(c, s);
     g_clip(c, ax + 12, ay, ax + aw - 12, ay + ah);
@@ -575,7 +608,7 @@ keys_done:
         float w = text_w(F_REG, 15, 0, addr);
         if (addr_sel && addr[0]) g_rect(c, ax + 40, ay + 7, w + 2, ah - 14, TH.sel);
         icon_glyph(c, G_SEARCH, ax + 22, ay + ah / 2, 14, TH.sub);
-        if (!addr[0]) text(c, F_REG, 15, 0, ax + 41, ay + 23, TH.dim, "Search or enter web address");
+        if (!addr[0]) text(c, F_REG, 15, 0, ax + 41, ay + 23, TH.dim, "Rechercher ou saisir une adresse web");
         text(c, F_REG, 15, 0, ax + 41, ay + 23, TH.text, addr);
         g_rect(c, ax + 41 + w + 1, ay + 8, 1.5f, ah - 16, TH.text);
     } else {
@@ -587,7 +620,7 @@ keys_done:
             float hx = text(c, F_REG, 15, 0, ax + 41, ay + 23, TH.sub, !strcmp(u.scheme, "https") ? "https://" : "http://");
             hx = text(c, F_SEMI, 15, 0, hx, ay + 23, TH.text, u.host);
             text(c, F_REG, 15, 0, hx, ay + 23, TH.sub, strcmp(u.path, "/") ? u.path : "");
-        } else text(c, F_REG, 15, 0, ax + 41, ay + 23, TH.dim, "Search or enter web address");
+        } else text(c, F_REG, 15, 0, ax + 41, ay + 23, TH.dim, "Rechercher ou saisir une adresse web");
     }
     g_setclip(c, s);
     if (ui_downin(ax, ay, aw, ah)) { editing = 1; addr_sel = t->url[0] != 0; snprintf(addr, sizeof addr, "%s", t->url); t->focus = 0; }

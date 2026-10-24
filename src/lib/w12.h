@@ -111,7 +111,14 @@ void labelf(Canvas *c, int f, float px, float x, float y, float h, uint32_t col,
 
 // ---- theme ----------------------------------------------------------------------------------
 #define NACCENT 6
-#define NWALL 15
+#define NWALL 9  // Six dark/light pairs plus three theme-neutral world wallpapers
+// Shared libflxui design tokens. Geometry is expressed on the 4 px grid.
+#define FLX_SPACE_UNIT 4.0f
+#define FLX_RADIUS_CONTROL 8.0f
+#define FLX_RADIUS_CARD 12.0f
+#define FLX_RADIUS_PILL 16.0f
+#define FLX_BORDER_WIDTH 1.0f
+#define FLX_ANIMATION_MS 180
 extern const uint32_t ACCENTS[NACCENT];
 extern const char *ACCENT_NAMES[NACCENT];
 extern const char *WALL_NAMES[NWALL];
@@ -124,11 +131,13 @@ extern Theme TH;
 void theme_set(int dark, int accent, int wall);
 
 // ---- icons.c --------------------------------------------------------------------------------
-enum { APP_EXPLORER, APP_SETTINGS, APP_TERMINAL, APP_NOTEPAD, APP_CALC, APP_TASKMGR, APP_MINES, APP_PROOF, NAPPS };
+enum { APP_EXPLORER, APP_SETTINGS, APP_TERMINAL, APP_NOTEPAD, APP_CALC, APP_TASKMGR, APP_MINES, APP_PROOF, APP_BROWSER, NAPPS };
 typedef struct { const char *exe, *title, *desc; } AppInfo;
 extern const AppInfo APPS[NAPPS];
 int app_by_exe(const char *exe);
 void icon_app(Canvas *c, int app, float x, float y, float size);
+enum { ICON_NORMAL, ICON_HOVER, ICON_ACTIVE, ICON_DISABLED };
+void icon_draw(Canvas *c, const char *name, float cx, float cy, int size, uint32_t color, int state);
 void icon_logo(Canvas *c, float cx, float cy, float size, int alpha);   // the official FLX OS golden fox mark
 void icon_user_avatar(Canvas *c, float x, float y, float size, float r, int alpha);
 enum {
@@ -136,6 +145,7 @@ enum {
     G_CHEV_D, G_CHEV_U, G_BACK, G_FWD, G_UP, G_REFRESH, G_PLUS, G_TRASH, G_EDIT, G_FOLDER, G_FILE, G_GEAR, G_USER,
     G_WIDGETS, G_HOME, G_LIST, G_GRID, G_SUN, G_MOON, G_CLOUD, G_RAIN, G_STAR, G_SEND, G_FLAG, G_CLOCK, G_RESTART,
     G_LOCK, G_INFO, G_PALETTE, G_NET, G_APPS, G_DISPLAY, G_SHIELD, G_CHECK, G_DOTS, G_COPY, G_PASTE, G_SAVE,
+    G_BLUETOOTH, G_DEVICES, G_CPU, G_MEMORY, G_DRIVE, G_UPDATE,
 };
 void icon_glyph(Canvas *c, int g, float cx, float cy, float size, uint32_t col);
 void icon_folder(Canvas *c, float x, float y, float size);

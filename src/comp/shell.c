@@ -17,16 +17,37 @@ static int lock_power_open;
 enum { H_LOCK_SHUT = 210, H_LOCK_RESTART, H_LOCK_SLEEP, H_LOCK_USER, H_LOCK_SUBMIT };
 static int auth_status = -1, auth_dialog, auth_confirm;
 static char auth_password[257], auth_first[257], auth_message[112];
+static char lock_users[8][32], lock_user[32] = "flx";
+static int lock_user_count;
 static char query[128];
-static int power_menu, all_apps, qs_open, dm_open; static float dm_x, dm_y, qs_vol = 0.7f, qs_bright = 1.0f; static int qs_drag;
+static int power_menu, all_apps, qs_open, dm_open, search_focus; static float dm_x, dm_y, qs_vol = 0.7f, qs_bright = 1.0f, app_scroll; static int qs_drag;
 static int super_alone;
 static int alt_sel; static int alt_list[MAXWIN], alt_n;
 static char recent[8][256]; static int nrecent;
 static int start_marked;
 static double tip_t; static int tip_id = -1;
+static void recent_load(void);
+static void load_wallpaper(void);
 
-int dock_autohide = 0;
-int dock_app_mask = 255;
+static void lock_users_load(void) {
+    char response[2048]; lock_user_count = 0;
+    if (flx_auth_request("LIST", response, sizeof response) || strncmp(response, "USERS", 5)) return;
+    char *save = 0;
+    for (char *entry = strtok_r(response + 5, " ", &save); entry && lock_user_count < 8; entry = strtok_r(0, " ", &save)) {
+        char *sep = strchr(entry, ':'); if (!sep) continue;
+        size_t n = (size_t)(sep - entry); if (!n || n >= sizeof lock_users[0]) continue;
+        memcpy(lock_users[lock_user_count], entry, n); lock_users[lock_user_count][n] = 0; lock_user_count++;
+    }
+    int found = 0; for (int i = 0; i < lock_user_count; i++) if (!strcmp(lock_users[i], lock_user)) found = 1;
+    if (!found && lock_user_count) snprintf(lock_user, sizeof lock_user, "%s", lock_users[0]);
+}
+static void password_hex(const char *password, char *out, size_t cap) {
+    size_t n = 0; for (const unsigned char *p = (const unsigned char *)password; *p && n + 2 < cap; p++) n += (size_t)snprintf(out + n, cap - n, "%02x", *p);
+    if (cap) out[n] = 0;
+}
+
+int dock_autohide = 1;
+int dock_app_mask = 127;
 static float dock_p = 1.0f;
 static int dock_revealed = 1;
 
@@ -37,8 +58,8 @@ static int dock_revealed = 1;
 #define SM_H 700
 #define SM_X ((SCR_W - SM_W) / 2)
 #define SM_Y (TBY - 12 - SM_H)
-static const char *PINNED[] = { "explorer", "terminal", "settings", "taskmgr", "calc", "notepad", "minesweeper", "proof" };
-#define NPIN 8
+static const char *PINNED[] = { "explorer", "browser", "terminal", "settings", "notepad", "calc", "taskmgr" };
+#define NPIN 7
 typedef struct { const char *exe; int app; } Slot;
 static int slots(Slot *s);
 enum {
@@ -61,17 +82,17 @@ int hit_at(float x, float y) {
 
 // ---- settings & recent files ------------------------------------------------------------------------
 void settings_save(void) {
-    char *s = strfmt("dark=%d\naccent=%d\nwall=%d\nautohide=%d\nfont=%d\nscale=%d\ndockapps=%d\n", TH.dark, TH.accent_i, TH.wall, dock_autohide, font_get_family(), ui_scale_percent, dock_app_mask);
-    write_file("/home/user/.config/flx.conf", s, strlen(s));
+    char *s = strfmt("dark=%d\naccent=%d\nwall=%d\nautohide=%d\nfont=%d\nfont_version=2\nscale=%d\ndockapps=%d\n", TH.dark, TH.accent_i, TH.wall, dock_autohide, font_get_family(), ui_scale_percent, dock_app_mask);
+    wm_write_user_file("/home/user/.config/flx.conf", s, strlen(s));
     free(s);
     char ds[96]; snprintf(ds, sizeof ds, "autohide=%d\ndockapps=%d\nscale=%d\n", dock_autohide, dock_app_mask, ui_scale_percent);
-    write_file("/home/user/.config/dock.conf", ds, strlen(ds));
+    wm_write_user_file("/home/user/.config/dock.conf", ds, strlen(ds));
     sync();
 }
-static void settings_load(void) {
-    int d = 1, a = 0, w = 0;  // FLX OS defaults: dark mode, gold accent, sunset city
-    char *s = read_file("/home/user/.config/flx.conf", 0);
-    if (!s) s = read_file("/home/user/.config/w12.conf", 0);  // backward compat
+void settings_load(void) {
+    int d = 1, a = 0, w = 0;  // FLX OS defaults: dark graphite, gold accent
+    char *s = wm_read_user_file("/home/user/.config/flx.conf", 65536);
+    if (!s) s = wm_read_user_file("/home/user/.config/w12.conf", 65536);  // backward compat
     if (s) {
         char *p;
         if ((p = strstr(s, "dark="))) d = atoi(p + 5);
@@ -79,11 +100,20 @@ static void settings_load(void) {
         if ((p = strstr(s, "wall="))) w = atoi(p + 5);
         if ((p = strstr(s, "autohide="))) dock_autohide = atoi(p + 9);
         if ((p = strstr(s, "scale="))) ui_scale_percent = mini(140, maxi(80, atoi(p + 6)));
-        if ((p = strstr(s, "font="))) font_set_family(atoi(p + 5));
-        if ((p = strstr(s, "dockapps="))) dock_app_mask = atoi(p + 9) & ((1 << NPIN) - 1);
+        if ((p = strstr(s, "font="))) {
+            int family = atoi(p + 5);
+            if (!strstr(s, "font_version=2")) family = family == 0 ? 1 : family == 1 ? 0 : family;
+            font_set_family(family);
+        }
+        if ((p = strstr(s, "dockapps="))) {
+            dock_app_mask = atoi(p + 9) & ((1 << NPIN) - 1);
+            // 63 was the former six-app default; keep the newly installed
+            // browser pinned when migrating an untouched pre-browser profile.
+            if (dock_app_mask == 63) dock_app_mask = 127;
+        }
         free(s);
     }
-    char *ds = read_file("/home/user/.config/dock.conf", 0);
+    char *ds = wm_read_user_file("/home/user/.config/dock.conf", 4096);
     if (ds) {
         char *p = strstr(ds, "autohide=");
         if (p) dock_autohide = atoi(p + 9);
@@ -93,9 +123,10 @@ static void settings_load(void) {
     }
     theme_set(d, a, w);
 }
+void shell_reload_session(void) { settings_load(); load_wallpaper(); recent_load(); dirty = 1; }
 static void recent_load(void) {
     nrecent = 0;
-    char *s = read_file("/home/user/.config/recent", 0);
+    char *s = wm_read_user_file("/home/user/.config/recent", 4096);
     if (!s) return;
     for (char *l = strtok(s, "\n"); l && nrecent < 8; l = strtok(0, "\n")) snprintf(recent[nrecent++], 256, "%s", l);
     free(s);
@@ -104,7 +135,7 @@ void recent_add(const char *path) {
     char out[8 * 260] = "";
     int n = snprintf(out, sizeof out, "%s\n", path);
     for (int i = 0, k = 1; i < nrecent && k < 8; i++) if (strcmp(recent[i], path)) { n += snprintf(out + n, sizeof out - n, "%s\n", recent[i]); k++; }
-    write_file("/home/user/.config/recent", out, n);
+    wm_write_user_file("/home/user/.config/recent", out, (size_t)n);
     recent_load();
     dirty = 1;
 }
@@ -115,19 +146,27 @@ static int wall_loaded = -1;
 static void load_wallpaper(void) {
     int key = TH.wall + TH.dark * NWALL;
     if (wall_loaded == key) return;
-    static const char *names[NWALL] = { "dark_aurora", "dark_eclipse", "dark_flow", "dark_glass", "dark_horizon", "dark_obsidian", "world_alpine", "world_coast", "world_sahara", "light_aurora", "light_eclipse", "light_flow", "light_glass", "light_horizon", "light_obsidian" };
+    static const char *dark_names[6] = { "dark_aurora", "dark_eclipse", "dark_flow", "dark_glass", "dark_horizon", "dark_obsidian" };
+    static const char *light_names[6] = { "light_aurora", "light_eclipse", "light_flow", "light_glass", "light_horizon", "light_obsidian" };
+    static const char *world_names[3] = { "world_alpine", "world_coast", "world_sahara" };
     char p[64];
-    const char *name = TH.wall >= 6 && TH.wall <= 8 ? names[TH.wall] : names[TH.wall + (TH.dark ? 0 : 9)];
+    int index = TH.wall;
+    if (index < 0 || index >= NWALL) index = ((index % NWALL) + NWALL) % NWALL;
+    const char *name = index < 6 ? (TH.dark ? dark_names[index] : light_names[index]) : world_names[index - 6];
     snprintf(p, sizeof p, "/share/wallpapers/%s.raw", name);
     size_t n;
     uint32_t *d = (uint32_t *)read_file(p, &n);
     if (!wall) { wall = canvas_new(SCR_W, SCR_H); wall_blur = canvas_new(SCR_W, SCR_H); }
     if (d && n >= 12 + (size_t)SCR_W * SCR_H * 4 && d[1] == SCR_W && d[2] == SCR_H) memcpy(wall->px, d + 3, (size_t)SCR_W * SCR_H * 4);
-    else { LOG("shell: wallpaper %s missing", p); g_vgrad(wall, 0, 0, SCR_W, SCR_H, 0, 0xFF0B1A3F, 0xFF1B3C8C); }
+    else {
+        LOG("shell: wallpaper %s missing", p);
+        if (TH.dark) g_vgrad(wall, 0, 0, SCR_W, SCR_H, 0, 0xFF0A151B, 0xFF152A35);
+        else g_vgrad(wall, 0, 0, SCR_W, SCR_H, 0, 0xFFD5E4F0, 0xFFF5F7F8);
+    }
     free(d);
     double t = now();
     g_blur_full(wall_blur, wall, 2);
-    LOG("shell: wallpaper %s, blur cache built in %.1f ms", names[TH.wall], (now() - t) * 1000);
+    LOG("shell: wallpaper %s, blur cache built in %.1f ms", name, (now() - t) * 1000);
     wall_loaded = key;
 }
 
@@ -135,15 +174,16 @@ void shell_init(void) {
     settings_load();
     load_wallpaper();
     recent_load();
-    auth_status = flx_auth_status();
-    for (int i = 0; auth_status < 0 && i < 30; i++) { usleep(50000); auth_status = flx_auth_status(); }
+    snprintf(lock_user, sizeof lock_user, "%s", wm_session_name());
+    lock_users_load();
+    auth_status = flx_auth_status_user(lock_user);
     if (auth_status < 0) snprintf(auth_message, sizeof auth_message, "Service d’authentification indisponible.");
-    if (auth_status == 0) { phase = PH_DESK; session_authenticated = 1; dirty = 1; }
+    if (auth_status == 0) { phase = PH_DESK; session_authenticated = 1; dirty = 1; MARK("READY desktop autologin"); }
     else boot_t0 = now();
     MARK("READY boot");
 }
 
-void lock_now(void) { phase = PH_LOCK; unlock_t = -1; lock_drag = 0; auth_dialog = auth_confirm = 0; auth_password[0] = auth_first[0] = auth_message[0] = 0; auth_status = flx_auth_status(); lock_shown_t = now(); close_panels(); dirty = 1; MARK("READY lock"); }
+void lock_now(void) { phase = PH_LOCK; unlock_t = -1; lock_drag = 0; auth_dialog = auth_confirm = 0; auth_password[0] = auth_first[0] = auth_message[0] = 0; snprintf(lock_user, sizeof lock_user, "%s", wm_session_name()); lock_users_load(); auth_status = flx_auth_status_user(lock_user); lock_shown_t = now(); close_panels(); dirty = 1; MARK("READY lock"); }
 static void unlock(void) { if (unlock_t < 0) { session_authenticated = 1; resume_fast_unlock = 0; auth_dialog = 0; auth_password[0] = auth_first[0] = 0; unlock_t = now(); MARK("UNLOCK authenticated"); } }
 
 static void request_suspend(void) {
@@ -151,7 +191,7 @@ static void request_suspend(void) {
     suspend_pending = 1;
     phase = PH_LOCK; unlock_t = -1; lock_drag = 0; auth_dialog = auth_confirm = 0;
     auth_password[0] = auth_first[0] = auth_message[0] = 0;
-    auth_status = flx_auth_status(); lock_shown_t = now(); close_panels(); dirty = 1;
+    snprintf(lock_user, sizeof lock_user, "%s", wm_session_name()); lock_users_load(); auth_status = flx_auth_status_user(lock_user); lock_shown_t = now(); close_panels(); dirty = 1;
     MARK("POWER suspend requested; authenticated=%d", resume_fast_unlock);
 }
 
@@ -174,27 +214,34 @@ static void lock_submit(void) {
     if (!n) { snprintf(auth_message, sizeof auth_message, "Saisissez votre mot de passe."); return; }
     char request[320], response[48];
     if (auth_status == 0) {
-        if (n < 10) { snprintf(auth_message, sizeof auth_message, "10 caractères minimum."); return; }
+        if (n < 1) { snprintf(auth_message, sizeof auth_message, "Un caractère minimum."); return; }
         if (!auth_confirm) {
             memcpy(auth_first, auth_password, n + 1); auth_password[0] = 0; auth_confirm = 1;
             snprintf(auth_message, sizeof auth_message, "Confirmez le nouveau mot de passe."); return;
         }
         if (strcmp(auth_first, auth_password)) {
-            auth_first[0] = auth_password[0] = 0; auth_confirm = 0;
+            memset(auth_first, 0, sizeof auth_first); memset(auth_password, 0, sizeof auth_password); auth_confirm = 0;
             snprintf(auth_message, sizeof auth_message, "Les mots de passe ne correspondent pas."); return;
         }
-        snprintf(request, sizeof request, "SET %s", auth_password);
+        char passhex[513]; password_hex(auth_password, passhex, sizeof passhex);
+        snprintf(request, sizeof request, "SETHEX %s %s", lock_user, passhex);
         int ok = !flx_auth_request(request, response, sizeof response) && !strcmp(response, "OK");
-        memset(request, 0, sizeof request); memset(response, 0, sizeof response);
+        memset(passhex, 0, sizeof passhex); memset(request, 0, sizeof request); memset(response, 0, sizeof response);
         if (ok) { auth_status = 1; unlock(); return; }
-        auth_first[0] = auth_password[0] = 0; auth_confirm = 0;
+        memset(auth_first, 0, sizeof auth_first); memset(auth_password, 0, sizeof auth_password); auth_confirm = 0;
         snprintf(auth_message, sizeof auth_message, "Création refusée. Réessayez."); return;
     }
-    snprintf(request, sizeof request, "VERIFY %s", auth_password);
-    int ok = !flx_auth_request(request, response, sizeof response) && !strcmp(response, "OK");
+    char passhex[513]; password_hex(auth_password, passhex, sizeof passhex);
+    snprintf(request, sizeof request, "AUTH %s %s", lock_user, passhex);
+    int ok = !flx_auth_request(request, response, sizeof response) && !strncmp(response, "OK ", 3);
+    if (ok) {
+        unsigned uid = 0, gid = 0; char role[16] = "standard";
+        if (sscanf(response, "OK %u %u %15s", &uid, &gid, role) != 3 || wm_session_set((uid_t)uid, (gid_t)gid, lock_user, role)) ok = 0;
+    }
+    memset(passhex, 0, sizeof passhex);
     memset(request, 0, sizeof request); memset(response, 0, sizeof response);
     if (ok) { unlock(); return; }
-    auth_password[0] = 0;
+    memset(auth_password, 0, sizeof auth_password);
     snprintf(auth_message, sizeof auth_message, "Mot de passe incorrect.");
 }
 void close_panels(void) {
@@ -204,9 +251,10 @@ void close_panels(void) {
 static void toggle_start(void) {
     int o = !start_open;
     close_panels();
-    start_open = o; query[0] = 0; start_marked = 0; all_apps = 0;
+    start_open = o; query[0] = 0; start_marked = 0; all_apps = 0; app_scroll = 0; search_focus = o;
     MARK("START %s", o ? "open" : "close");
 }
+static void open_shell_search(void) { if (!start_open) toggle_start(); search_focus = 1; dirty = 1; }
 
 int shell_animating(void) {
     if (phase == PH_BOOT || unlock_t >= 0) return 1;
@@ -353,13 +401,26 @@ static void draw_lock(Canvas *c) {
         for (int i=0;i<4;i++) { float yy=my+8+i*29; hit_add(ids[i],mx,yy,mw,29); text(c,F_REG,13,0,mx+14,yy+19,white,items[i]); }
     }
     if (auth_dialog) {
-        float dw=fminf(420, SCR_W-40), dh=auth_status==0 ? 276 : 244, dx=(SCR_W-dw)/2, dy=(SCR_H-dh)/2;
+        float dw=fminf(440, SCR_W-40), dh=324, dx=(SCR_W-dw)/2, dy=(SCR_H-dh)/2;
         g_rrect(c,dx,dy,dw,dh,16,16,0xF20A1419); g_rrect_line(c,dx,dy,dw,dh,16,1,0x5085A0A8);
-        text(c,F_SEMI,22,0,dx+28,dy+42,white,auth_status==0 ? (auth_confirm ? "Confirmer le mot de passe" : "Créer votre mot de passe") : "Déverrouiller FLX OS");
-        text(c,F_REG,13,0,dx+28,dy+70,0xFFB7C5CA,auth_status==0 ? "Première connexion · 10 caractères minimum" : "Compte local · saisissez votre mot de passe");
-        float fy=dy+96; g_rrect(c,dx+24,fy,dw-48,52,8,8,0xFF101F25); g_rrect_line(c,dx+24,fy,dw-48,52,8,1,TH.accent);
-        text(c,F_REG,16,0,dx+40,fy+32,white,auth_password[0] ? "••••••••••••" : "Mot de passe");
-        if(auth_message[0]) text(c,F_REG,12,0,dx+28,dy+177,auth_status==0 ? TH.accent : 0xFFFF8C82,auth_message);
+        text(c,F_SEMI,22,0,dx+28,dy+38,white,auth_status==0 ? (auth_confirm ? "Confirmer le mot de passe" : "Créer votre mot de passe") : "Déverrouiller FLX OS");
+        text(c,F_REG,12,0,dx+28,dy+61,0xFFB7C5CA,"Choisissez un compte");
+        int cols = lock_user_count > 4 ? 4 : (lock_user_count ? lock_user_count : 1);
+        float gap = 6, cellw = (dw - 48 - gap * (cols - 1)) / cols;
+        for (int i = 0; i < lock_user_count; i++) {
+            float bx = dx + 24 + (i % cols) * (cellw + gap), by = dy + 70 + (i / cols) * 30;
+            int active = !strcmp(lock_users[i], lock_user);
+            hit_add(230 + i, bx, by, cellw, 26);
+            g_rrect(c, bx, by, cellw, 26, 7, 7, active ? 0xFF34402D : 0xFF101F25);
+            if (active) g_rrect_line(c, bx, by, cellw, 26, 7, 1, TH.accent);
+            text_c(c, F_SEMI, 11, 0, bx + cellw / 2, by + 17, active ? TH.accent : white, lock_users[i]);
+        }
+        float fy=dy+138; g_rrect(c,dx+24,fy,dw-48,48,8,8,0xFF101F25); g_rrect_line(c,dx+24,fy,dw-48,48,8,1,TH.accent);
+        char masked[520]; size_t count = strlen(auth_password); if (count > 256) count = 256;
+        for (size_t i = 0; i < count; i++) { masked[i * 3] = (char)0xE2; masked[i * 3 + 1] = (char)0x80; masked[i * 3 + 2] = (char)0xA2; }
+        masked[count * 3] = 0;
+        text(c,F_REG,16,0,dx+40,fy+32,white,auth_password[0] ? masked : "Mot de passe");
+        if(auth_message[0]) text(c,F_REG,12,0,dx+28,dy+222,auth_status==0 ? TH.accent : 0xFFFF8C82,auth_message);
         float by=dy+dh-56; hit_add(H_LOCK_SUBMIT,dx+24,by,dw-48,40); g_rrect(c,dx+24,by,dw-48,40,8,8,TH.accent); text_c(c,F_SEMI,14,0,SCR_W/2,by+25,0xFF171411,auth_status==0 ? (auth_confirm ? "Enregistrer" : "Continuer") : "Déverrouiller");
         text_c(c,F_REG,11,0,SCR_W/2,dy+dh-8,0xFF92A4AB,"Entrée pour valider · Échap pour annuler");
     }
@@ -370,13 +431,8 @@ static void draw_topbar(Canvas *c) {
     g_glass(c, 0, 0, SCR_W, TOP, 0, glass_tint());
     g_rect(c, 0, TOP - 1, SCR_W, 1, TH.dark ? 0x20FFFFFF : 0x20000000);
     uint32_t fg = TH.text;
-    // left: FLX OS logo + name (clicking opens widgets panel)
-    hit_add(H_WIDGETS_BTN, 6, 3, 150, 30);
-    if (hover_id == H_WIDGETS_BTN || widgets_open) g_rrect(c, 6, 3, 150, 30, 6, 6, TH.hover);
-    icon_logo(c, 24, TOP / 2, 20, 255);
-    text(c, F_SEMI, 13, 0.5f, 38, TOP / 2 + 5, TH.accent, "FLX OS");
-    // centre: search
-    float sw = 400, sx = (SCR_W - sw) / 2;
+    // Search takes the former brand position; the desktop logo remains on the dock.
+    float sw = 340, sx = 18;
     hit_add(H_TOP_SEARCH, sx, 4, sw, 28);
     g_rrect(c, sx, 4, sw, 28, 14, 14, hover_id == H_TOP_SEARCH ? (TH.dark ? 0x30FFFFFF : 0xB0FFFFFF) : (TH.dark ? 0x18FFFFFF : 0x70FFFFFF));
     g_rrect_line(c, sx, 4, sw, 28, 14, 1, TH.dark ? 0x18FFFFFF : 0x14000000);
@@ -425,7 +481,8 @@ static int running(const char *exe, int *focused, int *count) {
 static void draw_taskbar(Canvas *c) {
     Slot s[16];
     int n = slots(s);
-    float slot = 52, w = 20 + (n + 2) * slot + 14, x = (SCR_W - w) / 2;
+    // Keep one clear entry point for the overview; search lives inside it.
+    float slot = 52, w = 20 + (n + 1) * slot + 14, x = (SCR_W - w) / 2;
     float y = lerpf(SCR_H + 10, TBY, ease_out(dock_p));
     if (dock_autohide && dock_p < 0.02f) {
         hit_add(H_START_BTN, (SCR_W - w) / 2, SCR_H - 12, w, 12);
@@ -438,12 +495,8 @@ static void draw_taskbar(Canvas *c) {
     if (hover_id == H_START_BTN || start_open) g_rrect(c, ix, y + 6, slot - 4, TBH - 12, 8, 8, TH.hover);
     icon_logo(c, ix + slot / 2 - 2, y + TBH / 2, 28, 255);
     ix += slot;
-    hit_add(H_SEARCH_BTN, ix, y + 4, slot - 4, TBH - 8);
-    if (hover_id == H_SEARCH_BTN) g_rrect(c, ix, y + 6, slot - 4, TBH - 12, 8, 8, TH.hover);
-    icon_glyph(c, G_SEARCH, ix + slot / 2 - 2, y + TBH / 2, 22, TH.text);
+    g_rect(c, ix + slot - 4, y + 16, 1, TBH - 32, TH.dark ? 0x40FFFFFF : 0x30000000);
     ix += slot + 4;
-    g_rect(c, ix - 4, y + 16, 1, TBH - 32, TH.dark ? 0x40FFFFFF : 0x30000000);
-    ix += 4;
     for (int i = 0; i < n; i++) {
         int id = H_TB_APP + i;
         hit_add(id, ix, y + 4, slot - 4, TBH - 8);
@@ -469,7 +522,7 @@ static int matches(const char *title, const char *q) {
 }
 static int results(int *out) {
     int n = 0;
-    for (int i = 0; i < NAPPS; i++) if (matches(APPS[i].title, query) || matches(APPS[i].exe, query)) out[n++] = i;
+    for (int i = 0; i < NAPPS && n < 16; i++) if (matches(APPS[i].title, query) || matches(APPS[i].exe, query)) out[n++] = i;
     for (int i = 0; i < nrecent && n < 12; i++) { const char *b = strrchr(recent[i], '/'); if (matches(b ? b + 1 : recent[i], query)) out[n++] = 1000 + i; }
     return n;
 }
@@ -481,128 +534,108 @@ static void open_result(int r) {
 static void draw_start(Canvas *c) {
     float p = ease_out(start_p);
     if (p <= 0.01f) return;
-    float x = SM_X, y = SM_Y + (1 - p) * 40;
-    glass_panel(c, x, y, SM_W, SM_H, 12, p);
-    if (p < 0.6f) return;
-    hit_add(H_START_PANEL, x, y, SM_W, SM_H);
-    float a = clampf((p - 0.6f) / 0.4f, 0, 1);
-    uint32_t fg = c_alpha(TH.text, a), sub = c_alpha(TH.sub, a);
-    // search field
-    float fx = x + 28, fy = y + 26, fw = SM_W - 56, fh = 40;
+    // FLX Overview: one quiet surface for search, apps, and open windows.
+    g_rect(c, 0, 0, SCR_W, SCR_H, c_alpha(TH.dark ? 0xE6081115 : 0xE6E8ECEF, p));
+    hit_add(H_START_PANEL, 0, 0, SCR_W, SCR_H);
+    float alpha = clampf((p - 0.35f) / 0.65f, 0, 1);
+    uint32_t fg = c_alpha(TH.text, alpha), sub = c_alpha(TH.sub, alpha);
+    float fw = fminf(660, SCR_W - 64), fx = (SCR_W - fw) / 2, fy = 54, fh = 54;
     hit_add(H_START_SEARCH, fx, fy, fw, fh);
-    g_rrect(c, fx, fy, fw, fh, 20, 20, TH.dark ? 0xFF2A2A2E : 0xFFFFFFFF);
-    g_rrect(c, fx + 14, fy + fh - 2, fw - 28, 2, 1, 1, query[0] ? TH.accent : 0);
-    icon_glyph(c, G_SEARCH, fx + 24, fy + fh / 2, 16, sub);
+    g_rrect(c, fx, fy, fw, fh, 18, 18, TH.dark ? 0xFF182226 : 0xFFF9FAFB);
+    g_rrect_line(c, fx, fy, fw, fh, 18, 1, TH.line);
+    icon_glyph(c, G_SEARCH, fx + 28, fy + fh / 2, 19, sub);
     if (query[0]) {
-        float tw = text(c, F_REG, 16, 0, fx + 44, fy + 26, fg, query);
-        g_rect(c, tw + 2, fy + 10, 1.5f, 20, TH.accent);
+        float tw = text(c, F_REG, 19, 0, fx + 58, fy + 34, fg, query);
+        g_rect(c, tw + 3, fy + 15, 1.5f, 24, TH.accent);
     } else {
-        text(c, F_REG, 16, 0, fx + 44, fy + 26, sub, "Rechercher une application, un fichier, une commande\u2026");
-        g_rect(c, fx + 43, fy + 10, 1.5f, 20, c_alpha(TH.accent, (fmod(now(), 1.0) < 0.55) ? a : 0));
+        text(c, F_REG, 17, 0, fx + 58, fy + 33, sub, "Rechercher applications et fichiers");
     }
+
     if (query[0]) {
-        int r[16];
-        int n = results(r);
-        text(c, F_SEMI, 15, 0, x + 40, y + 108, fg, n ? "Meilleur résultat" : "Aucun résultat");
+        int r[16], n = results(r);
+        text(c, F_SEMI, 15, 0, fx, fy + 92, fg, n ? "Résultats" : "Aucun résultat");
         for (int i = 0; i < n && i < 8; i++) {
-            float ry = y + 124 + i * 60;
+            float ry = fy + 108 + i * 58;
             int id = H_RESULT + i;
-            hit_add(id, x + 28, ry, SM_W - 56, 56);
-            if (hover_id == id || i == 0) g_rrect(c, x + 28, ry, SM_W - 56, 56, 8, 8, i == 0 ? TH.accent_soft : TH.hover);
+            hit_add(id, fx, ry, fw, 54);
+            if (hover_id == id || i == 0) g_rrect(c, fx, ry, fw, 54, 12, 12, i == 0 ? TH.accent_soft : TH.hover);
             if (r[i] < 1000) {
-                icon_app(c, r[i], x + 44, ry + 10, 36);
-                text(c, F_SEMI, 15, 0, x + 96, ry + 25, fg, APPS[r[i]].title);
-                text(c, F_REG, 13, 0, x + 96, ry + 44, sub, i == 0 ? "Application · Entrée pour ouvrir" : "App");
+                icon_app(c, r[i], fx + 14, ry + 9, 36);
+                text(c, F_SEMI, 15, 0, fx + 64, ry + 24, fg, APPS[r[i]].title);
+                text(c, F_REG, 12, 0, fx + 64, ry + 42, sub, APPS[r[i]].desc);
             } else {
-                const char *pth = recent[r[i] - 1000], *b = strrchr(pth, '/');
-                icon_file(c, b ? b + 1 : pth, x + 44, ry + 10, 36);
-                text(c, F_SEMI, 15, 0, x + 96, ry + 25, fg, b ? b + 1 : pth);
-                text(c, F_REG, 13, 0, x + 96, ry + 44, sub, pth);
+                const char *path = recent[r[i] - 1000], *base = strrchr(path, '/');
+                icon_file(c, base ? base + 1 : path, fx + 14, ry + 9, 36);
+                text(c, F_SEMI, 15, 0, fx + 64, ry + 24, fg, base ? base + 1 : path);
+                text(c, F_REG, 12, 0, fx + 64, ry + 42, sub, path);
             }
         }
+        return;
+    }
+
+    float content_w = fminf(980, SCR_W - 80), left = (SCR_W - content_w) / 2;
+    float cell = 100, gap = 12, gy = fy + 112;
+    if (!all_apps) {
+        text(c, F_SEMI, 15, 0, left, fy + 96, fg, "Favoris");
+        float gridw = fminf(content_w, NPIN * (cell + gap) - gap);
+        float gx = (SCR_W - gridw) / 2;
+        Slot pinned[16]; int n = slots(pinned);
+        for (int i = 0; i < n; i++) {
+            float x = gx + i * (cell + gap);
+            int id = H_START_APP + (pinned[i].app >= 0 ? pinned[i].app : i);
+            hit_add(id, x, gy, cell, 96);
+            if (hover_id == id) g_rrect(c, x, gy, cell, 96, 15, 15, TH.hover);
+            if (pinned[i].app >= 0) icon_app(c, pinned[i].app, x + 32, gy + 10, 36);
+            text_c(c, F_REG, 12, 0, x + cell / 2, gy + 72, fg, pinned[i].app >= 0 ? APPS[pinned[i].app].title : pinned[i].exe);
+        }
+        gy += 116;
     } else {
-        text(c, F_SEMI, 15, 0, x + 40, y + 106, fg, all_apps ? "Toutes les apps" : "\u00c9pingl\u00e9es");
-        hit_add(H_ALLAPPS, x + SM_W - 130, y + 88, 96, 26);
-        g_rrect(c, x + SM_W - 130, y + 88, 96, 26, 5, 5, hover_id == H_ALLAPPS ? TH.hover : (TH.dark ? 0x18FFFFFF : 0x70FFFFFF));
-        if (all_apps) { icon_glyph(c, G_CHEV_L, x + SM_W - 116, y + 101, 12, fg); text(c, F_REG, 13, 0, x + SM_W - 100, y + 106, fg, "Retour"); }
-        else { text(c, F_REG, 13, 0, x + SM_W - 118, y + 106, fg, "Toutes"); icon_glyph(c, G_CHEV_R, x + SM_W - 48, y + 101, 12, fg); }
-      if (all_apps) {
-        int order[NAPPS];
-        for (int i = 0; i < NAPPS; i++) order[i] = i;
-        for (int i = 0; i < NAPPS; i++) for (int k = i + 1; k < NAPPS; k++) if (strcmp(APPS[order[k]].title, APPS[order[i]].title) < 0) { int t = order[i]; order[i] = order[k]; order[k] = t; }
-        char last = 0;
-        float ly = y + 124;
-        for (int i = 0; i < NAPPS; i++) {
-            int a = order[i];
-            if (APPS[a].title[0] != last) { last = APPS[a].title[0]; char L[2] = { last, 0 }; text(c, F_SEMI, 13, 0, x + 44, ly + 18, TH.accent, L); ly += 26; }
-            int id = H_START_APP + a;
-            hit_add(id, x + 28, ly, SM_W - 56, 44);
-            if (hover_id == id) g_rrect(c, x + 28, ly, SM_W - 56, 44, 6, 6, TH.hover);
-            icon_app(c, a, x + 40, ly + 8, 28);
-            text(c, F_REG, 14, 0, x + 82, ly + 27, fg, APPS[a].title);
-            text_r(c, F_REG, 12, 0, x + SM_W - 44, ly + 27, sub, APPS[a].desc);
-            ly += 44;
-            if (ly > y + SM_H - 120) break;
-        }
-      } else {
-        float cw = (SM_W - 56) / 6.0f;
-        for (int i = 0; i < NAPPS; i++) {
-            float cx = x + 28 + (i % 6) * cw, cy = y + 126 + (i / 6) * 96;
+        text(c, F_SEMI, 15, 0, left, fy + 96, fg, "Toutes les applications");
+    }
+    // A discoverable application grid; scrolling keeps the overview usable on shorter displays.
+    int cols = mini(8, maxi(3, (int)(content_w / (cell + gap))));
+    int rows = (NAPPS + cols - 1) / cols;
+    float gridw = cols * cell + (cols - 1) * gap, gx = (SCR_W - gridw) / 2;
+    int clip[4]; g_getclip(c, clip); g_clip(c, 0, gy, SCR_W, SCR_H - 38);
+    for (int i = 0; i < NAPPS; i++) {
+        int row = i / cols, col = i % cols;
+        float x = gx + col * (cell + gap), y = gy + row * 80 - app_scroll;
+        if (all_apps && y + 72 > gy && y < SCR_H - 38) {
             int id = H_START_APP + i;
-            hit_add(id, cx + 4, cy, cw - 8, 90);
-            if (!start_marked && start_p >= 1) MARK("START_ITEM %s %d %d", APPS[i].exe, (int)(cx + cw / 2), (int)(cy + 45));
-            if (hover_id == id) g_rrect(c, cx + 4, cy, cw - 8, 90, 8, 8, TH.hover);
-            icon_app(c, i, cx + cw / 2 - 20, cy + 12, 40);
-            char *t = text_ellipsize(F_REG, 13, APPS[i].title, cw - 12);
-            text_c(c, F_REG, 13, 0, cx + cw / 2, cy + 76, fg, t);
-            free(t);
-        }
-        if (start_p >= 1) start_marked = 1;
-      }
-      if (!all_apps) {
-        float ry0 = y + 340;
-        text(c, F_SEMI, 15, 0, x + 40, ry0, fg, "Recommand\u00e9s");
-        if (!nrecent) text(c, F_REG, 13, 0, x + 40, ry0 + 36, sub, "Les fichiers r\u00e9cents appara\u00eetront ici.");
-        for (int i = 0; i < nrecent && i < 6; i++) {
-            float rx = x + 28 + (i % 2) * ((SM_W - 56) / 2), ry = ry0 + 18 + (i / 2) * 64;
-            int id = H_RECENT + i;
-            hit_add(id, rx, ry, (SM_W - 56) / 2 - 8, 58);
-            if (hover_id == id) g_rrect(c, rx, ry, (SM_W - 56) / 2 - 8, 58, 8, 8, TH.hover);
-            const char *b = strrchr(recent[i], '/');
-            icon_file(c, b ? b + 1 : recent[i], rx + 10, ry + 11, 36);
-            char *t = text_ellipsize(F_SEMI, 14, b ? b + 1 : recent[i], (SM_W - 56) / 2 - 80);
-            text(c, F_SEMI, 14, 0, rx + 56, ry + 26, fg, t);
-            free(t);
-            text(c, F_REG, 12, 0, rx + 56, ry + 44, sub, i == 0 ? "R\u00e9cemment ouvert" : "Ouvert r\u00e9cemment");
-        }
-      }
-    }
-    // user + power strip
-    float by = y + SM_H - 68;
-    g_rrect(c, x, by, SM_W, 68, 0, 12, TH.dark ? 0x30000000 : 0x30FFFFFF);
-    g_rect(c, x, by, SM_W, 1, TH.dark ? 0x20FFFFFF : 0x18000000);
-    hit_add(H_USER, x + 24, by + 12, 180, 44);
-    if (hover_id == H_USER) g_rrect(c, x + 24, by + 12, 180, 44, 8, 8, TH.hover);
-    icon_user_avatar(c, x + 36, by + 18, 32, 16, (int)(255 * a));
-    text(c, F_SEMI, 14, 0, x + 78, by + 39, fg, "FLX User");
-    hit_add(H_POWER, x + SM_W - 72, by + 12, 44, 44);
-    if (hover_id == H_POWER || power_menu) g_rrect(c, x + SM_W - 72, by + 12, 44, 44, 8, 8, TH.hover);
-    icon_glyph(c, G_POWER, x + SM_W - 50, by + 34, 20, fg);
-    if (power_menu) {
-        float mx = x + SM_W - 220, my = by - 180, mw = 200, mh = 172;
-        glass_panel(c, mx, my, mw, mh, 8, 1);
-        const char *L[4] = { "Mettre en veille", "Verrouiller", "Red\u00e9marrer", "Arr\u00eater" };
-        int G2[4] = { G_MOON, G_LOCK, G_RESTART, G_POWER };
-        int ids[4] = { H_PWR_SLEEP, H_PWR_LOCK, H_PWR_RESTART, H_PWR_SHUT };
-        for (int i = 0; i < 4; i++) {
-            int id = ids[i];
-            float iy = my + 6 + i * 40;
-            hit_add(id, mx + 6, iy, mw - 12, 38);
-            if (hover_id == id) g_rrect(c, mx + 6, iy, mw - 12, 38, 6, 6, TH.hover);
-            icon_glyph(c, G2[i], mx + 26, iy + 19, 16, TH.text);
-            text(c, F_REG, 14, 0, mx + 48, iy + 24, TH.text, L[i]);
+            hit_add(id, x, y, cell, 72);
+            if (hover_id == id) g_rrect(c, x, y, cell, 72, 12, 12, TH.hover);
+            icon_app(c, i, x + 32, y + 4, 36);
+            text_c(c, F_REG, 11, 0, x + cell / 2, y + 62, fg, APPS[i].title);
         }
     }
+    g_setclip(c, clip);
+    float toggle_w = 172, toggle_x = fx + fw - toggle_w, toggle_y = fy + 78;
+    hit_add(H_ALLAPPS, toggle_x, toggle_y, toggle_w, 28);
+    g_rrect(c, toggle_x, toggle_y, toggle_w, 26, 13, 13, TH.dark ? 0x202ED9C3 : 0x18000000);
+    text_c(c, F_SEMI, 12, 0, SCR_W / 2, toggle_y + 18, TH.accent, all_apps ? "Voir les favoris" : "Toutes les applications  ⌄");
+    float max_scroll = fmaxf(0, rows * 80 - (SCR_H - 38 - gy));
+    app_scroll = clampf(app_scroll, 0, max_scroll);
+
+    int open_count = 0;
+    for (int i = 0; i < nz; i++) { Win *w = &wins[zord[i]]; if (w->used && w->mapped && !w->closing && !w->minimized) open_count++; }
+    if (open_count) {
+        float wy = gy + 142;
+        text(c, F_SEMI, 15, 0, left, wy, fg, "Fenêtres ouvertes");
+        float ww = fminf(260, (content_w - 24) / 3), wh = 136;
+        int shown = 0;
+        for (int i = nz - 1; i >= 0 && shown < 6; i--) {
+            Win *w = &wins[zord[i]]; if (!w->used || !w->mapped || w->closing || w->minimized) continue;
+            float x = left + (shown % 3) * (ww + 12), y = wy + 18 + (shown / 3) * (wh + 12);
+            hit_add(H_TB_APP + 16 + shown, x, y, ww, wh);
+            glass_panel(c, x, y, ww, wh, 14, 1);
+            if (w->app >= 0) icon_app(c, w->app, x + 14, y + 12, 26);
+            text(c, F_SEMI, 13, 0, x + 48, y + 30, fg, w->title);
+            g_rrect(c, x + 12, y + 48, ww - 24, wh - 60, 8, 8, TH.dark ? 0x80101418 : 0x80FFFFFF);
+            text_c(c, F_REG, 11, 0, x + ww / 2, y + 102, sub, "Continuer");
+            shown++;
+        }
+    }
+    text_c(c, F_REG, 12, 0, SCR_W / 2, SCR_H - 30, sub, "Échap pour fermer · commence à taper pour rechercher");
 }
 
 // ---- quick settings + desktop menu ---------------------------------------------------------------
@@ -634,22 +667,44 @@ static void qs_slider(Canvas *c, int id, float x, float y, float w, int glyph, f
 }
 static void draw_quick(Canvas *c) {
     if (!qs_open) return;
-    float w = 384, h = 316, x = SCR_W - 12 - w, y = TOP + 12;
-    glass_panel(c, x, y, w, h, 12, 1);
+    float w = 356, h = 404, x = SCR_W - 12 - w, y = TOP + 12;
+    glass_panel(c, x, y, w, h, 20, 1);
     hit_add(H_QS_PANEL, x, y, w, h);
     NetInfo ni; netinfo_read(&ni);
-    float tx = x + 16, ty = y + 16;
-    qs_tile(c, H_QS_NET, tx, ty, ni.up ? G_WIFI : G_WIFI_OFF, ni.up ? "Connect\u00e9" : "D\u00e9connect\u00e9", ni.up ? ni.ip : "pas de bail DHCP", ni.up);
-    qs_tile(c, H_QS_DARK, tx + 120, ty, G_MOON, "Mode sombre", TH.dark ? "Actif" : "Inactif", TH.dark);
-    qs_tile(c, H_QS_ACCENT, tx + 240, ty, G_PALETTE, "Accent", ACCENT_NAMES[TH.accent_i], 0);
-    qs_tile(c, H_QS_WALL, tx, ty + 84, G_DISPLAY, "Fond d'\u00e9cran", WALL_NAMES[TH.wall], 0);
-    qs_tile(c, H_QS_LOCK, tx + 120, ty + 84, G_LOCK, "Verrouiller", "Win+L", 0);
-    qs_tile(c, H_QS_SETTINGS, tx + 240, ty + 84, G_GEAR, "Param\u00e8tres", "Tous", 0);
-    qs_slider(c, H_QS_BRIGHT, tx, ty + 180, w - 32, G_SUN, qs_bright);
-    qs_slider(c, H_QS_VOL, tx, ty + 220, w - 32, G_VOLUME, qs_vol);
-    g_rect(c, x, y + h - 52, w, 1, TH.dark ? 0x20FFFFFF : 0x18000000);
-    icon_glyph(c, G_BATTERY, x + 30, y + h - 26, 20, TH.text);
-    text(c, F_REG, 13, 0, x + 50, y + h - 21, TH.sub, "100% · plugged in (virtual machine)");
+    text(c, F_SEMI, 18, 0, x + 22, y + 32, TH.text, "Centre de contrôle");
+    text(c, F_REG, 11, 0, x + 22, y + 51, TH.sub, "FLX  ·  ÉTAT DU SYSTÈME");
+    float row = y + 68;
+    g_rrect(c, x + 16, row, w - 32, 54, 13, 13, TH.dark ? 0xFF101B20 : 0xA0FFFFFF);
+    hit_add(H_QS_NET, x + 16, row, w - 32, 54);
+    icon_glyph(c, ni.up ? G_WIFI : G_WIFI_OFF, x + 39, row + 26, 19, TH.accent);
+    text(c, F_SEMI, 13, 0, x + 61, row + 23, TH.text, ni.up ? "Réseau connecté" : "Réseau hors ligne");
+    text(c, F_REG, 11, 0, x + 61, row + 41, TH.sub, ni.up ? ni.ip : "Configurer la connexion");
+    text(c, F_SEMI, 12, 0, x + 22, row + 80, TH.sub, "APPARENCE FLX");
+    const int ids[3] = { H_QS_DARK, H_QS_ACCENT, H_QS_WALL };
+    const int glyphs[3] = { G_MOON, G_PALETTE, G_DISPLAY };
+    const char *names[3] = { TH.dark ? "Sombre" : "Clair", ACCENT_NAMES[TH.accent_i], "Fond" };
+    for (int i = 0; i < 3; i++) {
+        float bx = x + 16 + i * 108, by = row + 91;
+        hit_add(ids[i], bx, by, 100, 45);
+        g_rrect(c, bx, by, 100, 45, 13, 13, (i == 0 && TH.dark) ? TH.accent_soft : (TH.dark ? 0xFF101B20 : 0xA0FFFFFF));
+        icon_glyph(c, glyphs[i], bx + 17, by + 22, 15, TH.accent);
+        text(c, F_SEMI, 11, 0, bx + 32, by + 26, TH.text, names[i]);
+    }
+    qs_slider(c, H_QS_BRIGHT, x + 14, row + 151, w - 28, G_SUN, qs_bright);
+    qs_slider(c, H_QS_VOL, x + 14, row + 191, w - 28, G_VOLUME, qs_vol);
+    g_rect(c, x + 16, row + 230, w - 32, 1, TH.line);
+    FILE *bf = fopen("/sys/class/power_supply/BAT0/capacity", "r"); int pct = -1;
+    if (bf) { if (fscanf(bf, "%d", &pct) != 1 || pct < 0 || pct > 100) pct = -1; fclose(bf); }
+    icon_glyph(c, G_BATTERY, x + 30, row + 260, 17, TH.accent);
+    char power[80];
+    if (pct >= 0) snprintf(power, sizeof power, "Batterie · %d%%", pct);
+    else snprintf(power, sizeof power, "Alimentation secteur");
+    text(c, F_REG, 12, 0, x + 49, row + 264, TH.sub, power);
+    hit_add(H_QS_LOCK, x + w - 125, row + 245, 104, 34);
+    icon_glyph(c, G_LOCK, x + w - 112, row + 261, 14, TH.text);
+    text(c, F_SEMI, 11, 0, x + w - 94, row + 265, TH.text, "Verrouiller");
+    hit_add(H_QS_SETTINGS, x + 16, y + h - 38, w - 32, 28);
+    text(c, F_SEMI, 12, 0, x + 22, y + h - 20, TH.accent, "Ouvrir les paramètres");
 }
 static void draw_desk_menu(Canvas *c) {
     if (!dm_open) return;
@@ -695,12 +750,10 @@ static void draw_alttab(Canvas *c) {
     }
 }
 
-static Image *clock_flyout_landscape = NULL;
-
 static void draw_clock_flyout(Canvas *c) {
     float p = ease_out(clock_flyout_p);
     if (p <= 0.01f) return;
-    float fw = 270, fh = 336;
+    float fw = 340, fh = 424;
     float fx = SCR_W - 12 - fw;
     float fy = TOP + 8 + (1.0f - p) * (-14);
     float alpha = p;
@@ -721,28 +774,26 @@ static void draw_clock_flyout(Canvas *c) {
     static const char *MOIS_FR[]  = { "Janvier", "F\u00e9vrier", "Mars", "Avril", "Mai", "Juin", "Juillet", "Ao\u00fbt", "Septembre", "Octobre", "Novembre", "D\u00e9cembre" };
     snprintf(dstr, sizeof dstr, "%s %d %s %d", JOURS_FR[tm.tm_wday], tm.tm_mday, MOIS_FR[tm.tm_mon], tm.tm_year + 1900);
 
-    // Time (large, clear, clean light font)
-    text(c, F_LIGHT, 44, 0, fx + 24, fy + 54, c_alpha(TH.text, alpha), hm);
-
-    // Full localized French date
-    text(c, F_REG, 15, 0, fx + 24, fy + 82, c_alpha(TH.sub, alpha), dstr);
-
-    // Philosophy Quote
-    text(c, F_REG, 13, 0, fx + 24, fy + 124, c_alpha(0xFFCBD5E1, alpha), "\u00ab Les grandes choses");
-    text(c, F_REG, 13, 0, fx + 24, fy + 144, c_alpha(0xFFCBD5E1, alpha), "naissent d'une vision claire. \u00bb");
-    text(c, F_SEMI, 12, 0, fx + 24, fy + 172, c_alpha(TH.dim, alpha), "\u2014 FLX OS");
-
-    // Scenic landscape card at bottom
-    float ix = fx + 16, iy = fy + 194, iw = fw - 32, ih = 126;
-    if (!clock_flyout_landscape) clock_flyout_landscape = image_load("/share/icons/card_landscape.png");
-    if (clock_flyout_landscape) {
-        g_image_cover(c, clock_flyout_landscape, ix, iy, iw, ih, 12, (int)(255 * alpha));
-    } else {
-        g_vgrad(c, ix, iy, iw, ih, 12, 0xFF4A2A1A, 0xFF0B141C);
-    }
-    g_rrect_line(c, ix, iy, iw, ih, 12, 1.0f, c_alpha(0x30FFFFFF, alpha));
+    text(c, F_SEMI, 12, 0, fx + 24, fy + 30, c_alpha(TH.sub, alpha), "VOTRE JOURNÉE");
+    text(c, F_LIGHT, 48, 0, fx + 22, fy + 91, c_alpha(TH.text, alpha), hm);
+    text(c, F_REG, 14, 0, fx + 24, fy + 116, c_alpha(TH.sub, alpha), dstr);
+    g_rect(c, fx + 20, fy + 139, fw - 40, 1, c_alpha(TH.line, alpha));
+    icon_glyph(c, weather.ok ? weather_glyph(weather.code) : G_SUN, fx + 40, fy + 184, 31, c_alpha(TH.accent, alpha));
+    text(c, F_SEMI, 14, 0, fx + 72, fy + 174, c_alpha(TH.text, alpha), weather.ok ? weather.place : "Bamako");
+    if (weather.ok) labelf(c, F_LIGHT, 28, fx + 72, fy + 204, 34, c_alpha(TH.text, alpha), "%.0f°C", weather.temp);
+    else text(c, F_REG, 13, 0, fx + 72, fy + 200, c_alpha(TH.sub, alpha), "Météo indisponible");
+    text(c, F_REG, 12, 0, fx + 72, fy + 224, c_alpha(TH.sub, alpha), weather.ok ? weather.cond : "Connexion en attente");
+    g_rect(c, fx + 20, fy + 251, fw - 40, 1, c_alpha(TH.line, alpha));
+    icon_glyph(c, G_CLOCK, fx + 31, fy + 280, 17, c_alpha(TH.accent, alpha));
+    text(c, F_REG, 13, 0, fx + 56, fy + 285, c_alpha(TH.text, alpha), "Heure locale · Bamako");
+    FILE *bf = fopen("/sys/class/power_supply/BAT0/capacity", "r"); int pct = -1;
+    if (bf) { if (fscanf(bf, "%d", &pct) != 1 || pct < 0 || pct > 100) pct = -1; fclose(bf); }
+    icon_glyph(c, G_BATTERY, fx + 31, fy + 318, 18, c_alpha(TH.accent, alpha));
+    if (pct >= 0) { char b[40]; snprintf(b, sizeof b, "Batterie · %d%%", pct); text(c, F_REG, 13, 0, fx + 56, fy + 323, c_alpha(TH.text, alpha), b); }
+    else text(c, F_REG, 13, 0, fx + 56, fy + 323, c_alpha(TH.sub, alpha), "Sur secteur");
+    icon_glyph(c, TH.dark ? G_MOON : G_SUN, fx + 31, fy + 358, 18, c_alpha(TH.accent, alpha));
+    text(c, F_REG, 13, 0, fx + 56, fy + 363, c_alpha(TH.text, alpha), TH.dark ? "Ambiance nuit" : "Ambiance jour");
 }
-
 static void draw_tip(Canvas *c) {
     if (tip_id < H_TB_APP || tip_id >= H_TB_APP + 16 || now() - tip_t < 0.6 || start_open) return;
     Slot s[16];
@@ -757,13 +808,14 @@ static void draw_tip(Canvas *c) {
 }
 
 void shell_draw(Canvas *c) {
-    if (phase == PH_DESK || (phase == PH_LOCK && (unlock_t >= 0 || lock_drag > 0))) {
+        if (phase == PH_DESK || (phase == PH_LOCK && (unlock_t >= 0 || lock_drag > 0))) {
         nhits = 0;
-        draw_topbar(c);
+        Win *maximized = wm_top();
+        if (!maximized || maximized->state != 1) draw_topbar(c);
+        draw_start(c);
         draw_taskbar(c);
         draw_tip(c);
         widgets_draw(c, widgets_p);
-        draw_start(c);
         draw_quick(c);
         draw_desk_menu(c);
         draw_clock_flyout(c);
@@ -791,14 +843,22 @@ int shell_mouse(IEv *e) {
         if (unlock_t >= 0) return 1;
         int h = hit_at(e->x, e->y);
         if (e->type == IE_DOWN && e->btn == 1 && auth_dialog) {
-            if (h == H_LOCK_SUBMIT) lock_submit();
+            if (h >= 230 && h < 230 + lock_user_count) {
+                snprintf(lock_user, sizeof lock_user, "%s", lock_users[h - 230]);
+                auth_status = flx_auth_status_user(lock_user);
+                auth_confirm = 0; auth_password[0] = auth_first[0] = auth_message[0] = 0;
+            } else if (h == H_LOCK_SUBMIT) lock_submit();
             dirty = 1; return 1;
         }
         if (e->type == IE_DOWN && e->btn == 1 && h == H_POWER) { lock_power_open = !lock_power_open; dirty = 1; return 1; }
         if (e->type == IE_DOWN && e->btn == 1 && h >= H_LOCK_SHUT && h <= H_LOCK_USER) {
             lock_power_open = 0;
-            if (h == H_LOCK_SHUT || h == H_LOCK_RESTART) { settings_save(); sync(); exit(h == H_LOCK_RESTART ? 42 : 43); }
+            if (h == H_LOCK_SHUT || h == H_LOCK_RESTART) {
+                MARK("POWER %s", h == H_LOCK_RESTART ? "restart" : "shutdown");
+                settings_save(); sync(); exit(h == H_LOCK_RESTART ? 42 : 43);
+            }
             if (h == H_LOCK_SLEEP) request_suspend();
+            if (h == H_LOCK_USER) { lock_users_load(); auth_dialog = 1; auth_confirm = 0; auth_password[0] = auth_first[0] = auth_message[0] = 0; auth_status = flx_auth_status_user(lock_user); }
             dirty = 1; return 1;
         }
         if (e->type == IE_DOWN && e->btn == 1 && !lock_power_open && e->y >= SCR_H * .79f && e->y <= SCR_H * .79f + 76) { lock_down = 1; lock_x0 = e->x; lock_drag = 0; }
@@ -806,9 +866,10 @@ int shell_mouse(IEv *e) {
         else if (e->type == IE_UP && lock_down) {
             lock_down = 0;
             if (lock_drag >= (fminf(390, SCR_W - 48) - 76) * .78f) {
-                auth_status = flx_auth_status(); auth_dialog = 1; auth_confirm = 0;
+                auth_status = flx_auth_status_user(lock_user); lock_users_load(); auth_dialog = 1; auth_confirm = 0;
                 auth_password[0] = auth_first[0] = auth_message[0] = 0;
                 if (resume_fast_unlock && auth_status >= 0) { unlock(); dirty = 1; return 1; }
+                if (auth_status == 0) { unlock(); dirty = 1; return 1; }
                 if (auth_status < 0) snprintf(auth_message, sizeof auth_message, "Service d’authentification indisponible.");
             } else lock_drag = 0;
             dirty = 1;
@@ -819,7 +880,7 @@ int shell_mouse(IEv *e) {
     if (alttab_open) return 1;
     int h = hit_at(e->x, e->y);
     if (qs_drag && (e->type == IE_MOVE || e->type == IE_UP)) {
-        float x0 = SCR_W - 12 - 384 + 16 + 40, sw = 384 - 32 - 50;
+        float x0 = SCR_W - 12 - 356 + 14 + 40, sw = 356 - 28 - 50;
         float v = clampf((e->x - x0) / sw, 0, 1);
         if (qs_drag == 1) qs_bright = v; else qs_vol = v;
         if (e->type == IE_UP) { MARK("QUICK %s %.0f", qs_drag == 1 ? "brightness" : "volume", v * 100); qs_drag = 0; }
@@ -845,7 +906,8 @@ int shell_mouse(IEv *e) {
             if (h < 0) { close_panels(); return 1; }
         }
         switch (h) {
-        case H_START_BTN: case H_SEARCH_BTN: case H_TOP_SEARCH: toggle_start(); return 1;
+        case H_START_BTN: case H_SEARCH_BTN: toggle_start(); return 1;
+        case H_TOP_SEARCH: open_shell_search(); return 1;
         case H_WIDGETS_BTN: { int o = !widgets_open; close_panels(); widgets_open = o; MARK("WIDGETS %s", o ? "open" : "close"); return 1; }
         case H_NET: { int o = !qs_open; close_panels(); qs_open = o; MARK("QUICK %s", o ? "open" : "close"); return 1; }
         case H_QS_NET: launch("settings", "network"); close_panels(); return 1;
@@ -871,16 +933,23 @@ int shell_mouse(IEv *e) {
             settings_save(); sync();
             exit(h == H_PWR_RESTART ? 42 : 43);
         case H_USER: launch("settings", "accounts"); close_panels(); return 1;
-        case H_ALLAPPS: all_apps = !all_apps; return 1;
-        case H_START_PANEL: case H_START_SEARCH: return 1;
+        case H_ALLAPPS: all_apps = !all_apps; app_scroll = 0; dirty = 1; return 1;
+        case H_START_PANEL: return 1;
+        case H_START_SEARCH: search_focus = 1; dirty = 1; return 1;
         }
         if (h >= H_TB_APP && h < H_TB_APP + 16) { tb_click(h - H_TB_APP); return 1; }
+        if (h >= H_TB_APP + 16 && h < H_TB_APP + 22) {
+            int nth = h - H_TB_APP - 16, seen = 0;
+            for (int i = nz - 1; i >= 0; i--) { Win *w = &wins[zord[i]]; if (w->used && w->mapped && !w->closing && !w->minimized && seen++ == nth) { wm_restore(w); close_panels(); return 1; } }
+            return 1;
+        }
         if (h >= H_START_APP && h < H_START_APP + NAPPS) { launch(APPS[h - H_START_APP].exe, 0); close_panels(); return 1; }
         if (h >= H_RESULT && h < H_RESULT + 16) { int r[16]; int n = results(r); if (h - H_RESULT < n) open_result(r[h - H_RESULT]); return 1; }
         if (h >= H_RECENT && h < H_RECENT + 8) { launch("notepad", recent[h - H_RECENT]); close_panels(); return 1; }
         return h >= 0;
     }
     if (e->type == IE_UP || e->type == IE_WHEEL) {
+        if (e->type == IE_WHEEL && start_open && all_apps) { app_scroll = fmaxf(0, app_scroll + e->wheel * 54); dirty = 1; return 1; }
         if (widgets_open && widgets_mouse(e, widgets_p)) return 1;
         return h >= 0;
     }
@@ -935,12 +1004,12 @@ int shell_key(IEv *e) {
         if (k == 'a') { int o = !qs_open; close_panels(); qs_open = o; MARK("QUICK %s", o ? "open" : "close"); return 1; }
         return 0;   // Win+arrows go to the window manager
     }
-    if (e->key == K_ESC && (start_open || widgets_open || qs_open || dm_open || clock_flyout_open)) { close_panels(); MARK("PANELS close"); return 1; }
-    if (start_open) {
+    if (e->key == K_ESC && (start_open || widgets_open || qs_open || dm_open || clock_flyout_open)) { close_panels(); search_focus = 0; MARK("PANELS close"); return 1; }
+    if (start_open && search_focus) {
         int n = strlen(query);
-        if (e->key == K_BACKSPACE) { if (n) query[n - 1] = 0; }
+        if (e->key == K_BACKSPACE) { if (n) { do { n--; } while (n && ((unsigned char)query[n] & 0xC0) == 0x80); query[n] = 0; } }
         else if (e->key == K_ENTER) { int r[16]; if (results(r)) open_result(r[0]); }
-        else if (e->text[0] && n < (int)sizeof query - 2) { query[n] = e->text[0]; query[n + 1] = 0; }
+        else if (e->text[0] && n + strlen(e->text) < sizeof query - 1) strcat(query, e->text);
         dirty = 1;
         return 1;
     }

@@ -8,19 +8,19 @@ float cpu_pct, mem_pct;
 long mem_total_kb, mem_used_kb;
 static pthread_mutex_t wmu = PTHREAD_MUTEX_INITIALIZER;
 #define CACHE "/home/.config/weather.json"
-#define WURL "https://api.open-meteo.com/v1/forecast?latitude=50.08&longitude=14.44&current=temperature_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1"
+#define WURL "https://api.open-meteo.com/v1/forecast?latitude=12.65&longitude=-8.00&current=temperature_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1"
 
 const char *weather_desc(int c) {
-    if (c == 0) return "Clear";
-    if (c <= 2) return "Partly cloudy";
-    if (c == 3) return "Cloudy";
-    if (c == 45 || c == 48) return "Fog";
-    if (c >= 51 && c <= 57) return "Drizzle";
-    if (c >= 61 && c <= 67) return "Rain";
-    if (c >= 71 && c <= 77) return "Snow";
-    if (c >= 80 && c <= 82) return "Showers";
-    if (c >= 95) return "Thunderstorm";
-    return "Cloudy";
+    if (c == 0) return "Ciel dégagé";
+    if (c <= 2) return "Peu nuageux";
+    if (c == 3) return "Nuageux";
+    if (c == 45 || c == 48) return "Brouillard";
+    if (c >= 51 && c <= 57) return "Bruine";
+    if (c >= 61 && c <= 67) return "Pluie";
+    if (c >= 71 && c <= 77) return "Neige";
+    if (c >= 80 && c <= 82) return "Averses";
+    if (c >= 95) return "Orage";
+    return "Nuageux";
 }
 int weather_glyph(int c) { return c == 0 ? G_SUN : (c >= 51 && c <= 82) || c >= 95 ? G_RAIN : G_CLOUD; }
 
@@ -33,7 +33,7 @@ static int parse(const char *s, Weather *w) {
     w->wind = json_num(json_get(cur, "wind_speed_10m"), 0);
     w->tmax = json_num(json_at(json_get(d, "temperature_2m_max"), 0), w->temp);
     w->tmin = json_num(json_at(json_get(d, "temperature_2m_min"), 0), w->temp);
-    snprintf(w->place, sizeof w->place, "Prague");
+    snprintf(w->place, sizeof w->place, "Bamako");
     snprintf(w->cond, sizeof w->cond, "%s", weather_desc(w->code));
     w->ok = 1;
     json_free(j);

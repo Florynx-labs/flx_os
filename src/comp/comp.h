@@ -22,7 +22,7 @@ extern int mouse_buttons, mods_held;
 #define MAXWIN 32
 typedef struct Win {
     int used, id, fd, app, mica;
-    uid_t peer_uid;
+    uid_t peer_uid; pid_t peer_pid;
     pid_t pid;
     char exe[32], title[128];
     uint32_t *shm;
@@ -40,6 +40,15 @@ extern Win wins[MAXWIN];
 extern int zord[MAXWIN], nz;     // bottom..top indices into wins
 extern Win *focus;
 void wm_init(void);
+int wm_session_set(uid_t uid, gid_t gid, const char *name, const char *role);
+uid_t wm_session_uid(void);
+const char *wm_session_name(void);
+const char *wm_session_role(void);
+int wm_write_user_file(const char *path, const void *data, size_t len);
+char *wm_read_user_file(const char *path, size_t max_len);
+void settings_load(void);
+void shell_reload_session(void);
+void panels_session_changed(void);
 void wm_accept(int lfd);
 void wm_client(Win *w);
 void wm_compose(Canvas *c);

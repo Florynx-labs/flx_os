@@ -16,9 +16,16 @@ static float cpu_hist[60]; static int nh;
 static Image *cached_art_landscape = NULL;
 
 void panels_init(void) {
-    char *n = read_file("/home/.config/notes.txt", 0);
+    char *n = wm_read_user_file("/home/user/.config/notes.txt", sizeof notes - 1);
     snprintf(notes, sizeof notes, "%s", n ? n : "Bienvenue sur FLX OS\nUne vision sobre et puissante.\n");
     free(n);
+}
+void panels_session_changed(void) {
+    memset(notes, 0, sizeof notes);
+    char *n = wm_read_user_file("/home/user/.config/notes.txt", sizeof notes - 1);
+    if (n) { snprintf(notes, sizeof notes, "%s", n); free(n); }
+    notes_focus = 0;
+    dirty = 1;
 }
 
 static void card(Canvas *c, float x, float y, float w, float h, float a) {
@@ -143,7 +150,7 @@ int widgets_key(IEv *e) {
     else if (e->key == K_ENTER) { if (n < (int)sizeof notes - 2) { notes[n] = '\n'; notes[n + 1] = 0; } }
     else if (e->text[0] && n < (int)sizeof notes - 2) { notes[n] = e->text[0]; notes[n + 1] = 0; }
     else return 0;
-    write_file("/home/.config/notes.txt", notes, strlen(notes));
+    wm_write_user_file("/home/user/.config/notes.txt", notes, strlen(notes));
     return 1;
 }
 

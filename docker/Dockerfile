@@ -5,5 +5,5 @@
 #   docker build --platform linux/amd64 -t flx-toolchain-amd64 docker/      (x86_64)
 FROM alpine:3.22
 RUN apk add --no-cache build-base linux-headers bc flex bison perl xz curl \
-    python3 py3-pillow elfutils-dev openssl-dev diffutils findutils cpio e2fsprogs rust cargo
+    python3 py3-pillow py3-cairosvg elfutils-dev openssl-dev diffutils findutils cpio e2fsprogs rust cargo
 WORKDIR /src

@@ -55,7 +55,8 @@ static int listen_sock(void) {
     snprintf(a.sun_path, sizeof a.sun_path, "%s", W12_SOCK);
     unlink(W12_SOCK);
     if (bind(s, (struct sockaddr *)&a, sizeof a) || listen(s, 16)) { LOG("comp: socket failed (%s)", strerror(errno)); return -1; }
-    chmod(W12_SOCK, 0666);
+    chown(W12_SOCK, 0, 1000);
+    chmod(W12_SOCK, 0660);
     return s;
 }
 

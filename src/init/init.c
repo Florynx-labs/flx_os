@@ -91,7 +91,21 @@ int main(void) {
     }
     if (ok) { say("init: no home disk (%s), using tmpfs", strerror(errno)); mount("tmpfs", "/home", "tmpfs", 0, 0); }
     else say("init: /home mounted from /dev/vda (ext2)");
-    mkdir("/home/user", 0755);
+    mkdir("/home/users", 0755);
+    chmod("/home/users", 0755);
+    chown("/home/users", 0, 0);
+    struct stat home_st;
+    if (!lstat("/home/user", &home_st)) {
+        if (S_ISDIR(home_st.st_mode) && !S_ISLNK(home_st.st_mode)) {
+            struct stat flx_st;
+            if (lstat("/home/users/flx", &flx_st)) rename("/home/user", "/home/users/flx");
+            else if (lstat("/home/users/legacy", &flx_st)) rename("/home/user", "/home/users/legacy");
+        } else unlink("/home/user");
+    }
+    if (lstat("/home/users/flx", &home_st)) mkdir("/home/users/flx", 0700);
+    chmod("/home/users/flx", 0700);
+    unlink("/home/user");
+    if (symlink("/home/users/flx", "/home/user")) say("init: cannot link active home (%s)", strerror(errno));
     mkdir("/home/user/.config", 0700);
     mkdir("/home/user/Documents", 0755);
     mkdir("/home/user/Pictures", 0755);
@@ -102,9 +116,10 @@ int main(void) {
     mkdir("/home/.flx-system", 0700);
     chmod("/home/.flx-system", 0700);
     chown("/home/.flx-system", 0, 0);
-    own_user_tree("/home/user");
+    own_user_tree("/home/users/flx");
     signal(SIGINT, SIG_IGN);
     pid_t net = spawn("/bin/flx-netd");
+    pid_t dev = spawn("/bin/flx-deviced");
     pid_t auth = spawn("/bin/flx-authd");
     pid_t comp = spawn("/bin/flx-compositor");
     int crashes = 0;
@@ -122,6 +137,10 @@ int main(void) {
             say("init: netd exited (%d), restarting", st);
             sleep(1);
             net = spawn("/bin/flx-netd");
+        } else if (p == dev) {
+            say("init: deviced exited (%d), restarting", st);
+            sleep(1);
+            dev = spawn("/bin/flx-deviced");
         } else if (p == auth) {
             say("init: authd exited (%d), restarting", st);
             sleep(1);
